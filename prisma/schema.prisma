@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- AUTHENTICATION & USERS ---
+model User {
+  id           String       @id @default(uuid())
+  username     String       @unique
+  passwordHash String
+  fullName     String
+  role         Role         @default(USER)
+  isActive     Boolean      @default(true)
+  
+  // Scoped Access:
+  // If USER: linked to ONE hospital (Read-only for that hospital).
+  // If ADMIN/SUPERADMIN: can be null (Global access).
+  hospitalId   Int?
+  hospital     Hospital?    @relation(fields: [hospitalId], references: [id])
+  
+  sessions     Session[]
+  notifications Notification[]
+  createdUsers  User[]      @relation("Creator") 
+  creatorId     String?
+  creator       User?       @relation("Creator", fields: [creatorId], references: [id])
+  
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+enum Role {
+  SUPERADMIN // Config, Master Data, Manage All Users
+  ADMIN      // Global Data Entry, Offline Mode, Manage Hospital Users
+  USER       // Read-Only (Scoped to Hospital), Export Excel
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+}
+
+// --- ORGANIZATION ---
+model Hospital {
+  id                Int          @id @default(autoincrement())
+  name              String
+  code9             String?      @unique // รหัส 9 หลักเดิม (legacy)
+  code9New          String?      @unique // รหัส 9 หลักใหม่ (เช่น BA0000712)
+  code5             String?
+  type              String?      // เช่น "MUNICIPALITY", "SAO" (Legacy field, keep for compatibility)
+  
+  // Detailed Info
+  orgType           String?      // ประเภทองค์กร (เช่น "รัฐบาล")
+  healthServiceType String?      // ประเภทหน่วยบริการสุขภาพ (เช่น "โรงพยาบาลทั่วไป")
+  affiliation       String?      // สังกัด (เช่น "กระทรวงสาธารณสุข")
+  department        String?      // แผนก/กรม (เช่น "สำนักงานปลัดกระทรวงสาธารณสุข")
+
+  users             User[]
+  cases             CaseReport[]
+  populations       Population[]
+  
+  deletedAt         DateTime?    // Soft delete
+  createdAt         DateTime?    @default(now())
+  updatedAt         DateTime?    @updatedAt
+  
+  @@index([deletedAt])
+}
+
+// --- CONFIG & LOGS ---
+model SystemConfig {
+  id    String @id @default(uuid())
+  key   String @unique // e.g. "DISCORD_WEBHOOK_URL"
+  value String
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   
+  user      User     @relation(fields: [userId], references: [id])
+  title     String   
+  message   String   
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  resource  String
+  userId    String
+  timestamp DateTime @default(now())
+}
+
+// --- MASTER DATA (Replaces Enums for Flexibility) ---
+model MasterData {
+  id       Int       @id @default(autoincrement())
+  category String    // "PREFIX", "OCCUPATION", "NATIONALITY", "MARITAL_STATUS"
+  value    String    // "นาย", "เกษตรกร", "ไทย", "โสด"
+  deletedAt DateTime? // Soft delete
+  createdAt DateTime?  @default(now())
+  updatedAt DateTime?  @updatedAt
+  @@unique([category, value])
+  @@index([deletedAt])
+}
+
+model Disease {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique // ICD-10 (e.g., A90)
+  nameTh       String    // "ไข้เลือดออก"
+  nameEn       String?   // "Dengue fever"
+  abbreviation String?   // "DHF"
+  symptoms     String?   // Details/Symptoms text
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime? // Soft delete
+  cases        CaseReport[]
+}
+
+model Population {
+  id         Int      @id @default(autoincrement())
+  year       Int      
+  amount     Int      
+  hospitalId Int
+  hospital   Hospital @relation(fields: [hospitalId], references: [id])
+  @@unique([hospitalId, year])
+}
+
+// --- GEO ---
+model Province {
+  id       Int       @id
+  code     String
+  nameTh   String
+  deletedAt DateTime?
+  createdAt DateTime?  @default(now())
+  updatedAt DateTime?  @updatedAt
+  amphoes  Amphoe[]
+  patients Patient[]
+  sickCases CaseReport[] @relation("SickProvince")
+  @@index([deletedAt])
+}
+
+model Amphoe {
+  id         Int       @id
+  code       String
+  nameTh     String
+  provinceId Int
+  province   Province  @relation(fields: [provinceId], references: [id])
+  deletedAt DateTime?
+  createdAt DateTime?  @default(now())
+  updatedAt DateTime?  @updatedAt
+  tambons    Tambon[]
+  patients   Patient[]
+  sickCases  CaseReport[] @relation("SickAmphoe")
+  @@index([deletedAt])
+  @@index([provinceId])
+}
+
+model Tambon {
+  id         Int       @id
+  code       String
+  nameTh     String
+  postalCode String?  // รหัสไปรษณีย์ (5 หลัก)
+  amphoeId Int
+  amphoe   Amphoe    @relation(fields: [amphoeId], references: [id])
+  deletedAt DateTime?
+  createdAt DateTime?  @default(now())
+  updatedAt DateTime?  @updatedAt
+  patients Patient[]
+  sickCases CaseReport[] @relation("SickTambon")
+  @@index([deletedAt])
+  @@index([amphoeId])
+}
+
+// --- CORE DATA: PATIENT (Profile) ---
+model Patient {
+  id           String       @id @default(uuid())
+  idCard       String?      @unique // Map from 'idCardCode'
+  
+  // Personal Info
+  prefix       String?      // From MasterData
+  firstName    String       // Map from 'fname'
+  lastName     String       // Map from 'lname'
+  gender       String       // "MALE", "FEMALE"
+  birthDate    DateTime?    
+  nationality  String?      @default("ไทย")
+  maritalStatus String?     // From MasterData
+  occupation   String?      // From MasterData
+  phone        String?
+  
+  // Permanent Address (Current Address in v1.5)
+  addressNo    String?      // 'currentHouseNumber'
+  moo          String?      // 'currentVillageNumber'
+  road         String?      // 'currentRoadName'
+  postalCode   String?      // รหัสไปรษณีย์ (5 หลัก)
+  provinceId   Int?
+  amphoeId     Int?
+  tambonId     Int?
+  
+  // Relations
+  province     Province?    @relation(fields: [provinceId], references: [id])
+  amphoe       Amphoe?      @relation(fields: [amphoeId], references: [id])
+  tambon       Tambon?      @relation(fields: [tambonId], references: [id])
+  cases        CaseReport[]
+  
+  deletedAt    DateTime? 
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  @@index([firstName, lastName, idCard])
+}
+
+// --- CORE DATA: CASE REPORT (Transaction) ---
+model CaseReport {
+  id           String    @id @default(uuid())
+  clientId     String?   @unique // UUID from client to prevent duplicate submissions
+  patientId    String
+  patient      Patient   @relation(fields: [patientId], references: [id])
+  
+  // Reporting Unit (Who recorded this?)
+  hospitalId   Int
+  hospital     Hospital  @relation(fields: [hospitalId], references: [id])
+  
+  // Medical Info
+  diseaseId    Int
+  disease      Disease   @relation(fields: [diseaseId], references: [id])
+  
+  illnessDate  DateTime? // 'illnessDate'
+  treatDate    DateTime? // 'treatmentDate'
+  diagnosisDate DateTime?
+  
+  // Status & Type
+  patientType  String?   // "IPD", "OPD", "ACF"
+  condition    String?   // "RECOVERED", "DIED", "UNDER_TREATMENT"
+  deathDate    DateTime?
+  causeOfDeath String?
+  
+  // Epidemiology Data
+  ageYears     Int       // Calculated at time of illness
+  
+  // Sick Address (Specific to this case)
+  // Logic: Can copy from Patient address or be different
+  sickAddressNo String?
+  sickMoo       String?
+  sickRoad      String?
+  sickPostalCode String?  // รหัสไปรษณีย์ (5 หลัก) - ที่อยู่ขณะป่วย
+  sickProvinceId Int?
+  sickAmphoeId   Int?
+  sickTambonId   Int?
+  
+  // Relations for sick address
+  sickProvince Province? @relation("SickProvince", fields: [sickProvinceId], references: [id])
+  sickAmphoe   Amphoe?   @relation("SickAmphoe", fields: [sickAmphoeId], references: [id])
+  sickTambon   Tambon?   @relation("SickTambon", fields: [sickTambonId], references: [id])
+  
+  // Metadata
+  reporterName  String?
+  remark        String?
+  treatingHospital String? // โรงพยาบาลที่กำลังรักษา (Free text)
+  
+  // Lab Results (Free text fields)
+  labResult1   String?  // ผลแลปเพิ่มเติม 1
+  labResult2   String?  // ผลแลปเพิ่มเติม 2
+  
+  deletedAt    DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  @@index([hospitalId, illnessDate])
+  @@index([diseaseId])
+  @@index([deletedAt])
+  @@index([clientId])
+}
+

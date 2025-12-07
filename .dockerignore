@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+npm-debug.log
+
+# Build outputs
+build
+.svelte-kit
+dist
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+*.log
+logs
+
+# Testing
+coverage
+
+# Misc
+.editorconfig
+.prettierrc
+
+
+
+

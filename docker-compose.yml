@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # 1. Database Service
+  db:
+    image: postgres:16-alpine
+    container_name: vbddb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vbduser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vbdpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-vbddb}
+    ports:
+      - "5432:5432" # ✅ เพิ่มบรรทัดนี้ เพื่อให้ Navicat เข้าได้
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vbduser} -d ${POSTGRES_DB:-vbddb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vbd_network
+
+  # 2. App Service (SvelteKit Web)
+  app:
+    build: .
+    container_name: vbddb-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # ✅ ใช้ตัวแปรแทนการฝังรหัสผ่าน (ปลอดภัยกว่า)
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-vbduser}:${POSTGRES_PASSWORD:-vbdpassword}@db:5432/${POSTGRES_DB:-vbddb}?schema=public"
+      
+      # ✅ ถ้ามีโดเมน Cloudflare ให้ใส่ตรงนี้ (ถ้าไม่มี ให้คอมเมนต์ไว้ก่อน)
+      # ORIGIN: "https://your-domain-name.com" 
+      
+      SESSION_SECRET: "change-this-secret-key-in-production-use-openssl-rand-base64-32"
+      NODE_ENV: "production"
+      BODY_SIZE_LIMIT: "10M"
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - vbd_network
+
+  # 3. Tunnel Service (Cloudflare)
+  tunnel:
+    image: cloudflare/cloudflared
+    container_name: vbddb-tunnel
+    restart: unless-stopped
+    command: ${TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - vbd_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  vbd_network:
+    driver: bridge

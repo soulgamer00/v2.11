@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	body {
+		@apply bg-base-100 text-base-content transition-colors duration-300;
+	}
+	
+	* {
+		@apply transition-colors duration-200;
+	}
+}
+
+@layer components {
+	.card-bordered {
+		@apply border border-base-300;
+	}
+
+	.input-error {
+		@apply input-bordered border-error;
+	}
+
+	.label-error {
+		@apply text-error text-sm mt-1;
+	}
+	
+	/* Modern card with hover effect */
+	.card-modern {
+		@apply bg-base-100 rounded-lg shadow-md border border-base-300;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+	
+	.card-modern:hover {
+		@apply shadow-xl border-primary/20;
+		transform: translateY(-2px);
+	}
+	
+	/* Smooth button animations */
+	.btn-modern {
+		@apply transition-all duration-300;
+		position: relative;
+		overflow: hidden;
+	}
+	
+	.btn-modern::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 0;
+		height: 0;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.2);
+		transform: translate(-50%, -50%);
+		transition: width 0.6s, height 0.6s;
+	}
+	
+	.btn-modern:hover::before {
+		width: 300px;
+		height: 300px;
+	}
+	
+	/* Input focus effects */
+	.input-modern:focus {
+		@apply ring-2 ring-primary/50 border-primary;
+		transform: scale(1.02);
+	}
+	
+	/* Tab animations */
+	.tab-modern {
+		@apply transition-all duration-200;
+		position: relative;
+	}
+	
+	.tab-modern::after {
+		content: '';
+		position: absolute;
+		bottom: 0;
+		left: 50%;
+		width: 0;
+		height: 2px;
+		@apply bg-primary;
+		transform: translateX(-50%);
+		transition: width 0.3s ease;
+	}
+	
+	.tab-modern.tab-active::after {
+		width: 80%;
+	}
+	
+	/* Progress bar animation */
+	.progress-modern {
+		@apply transition-all duration-500;
+	}
+	
+	/* Icon animations */
+	.icon-bounce:hover {
+		animation: bounce 0.6s ease-in-out;
+	}
+	
+	.icon-spin:hover {
+		animation: spin 1s linear infinite;
+	}
+	
+	/* Gradient backgrounds */
+	.bg-gradient-modern {
+		background: linear-gradient(135deg, hsl(var(--p)) 0%, hsl(var(--s)) 100%);
+	}
+	
+	/* Glass morphism effect */
+	.glass {
+		@apply bg-base-100/80 backdrop-blur-md border border-base-300/50;
+	}
+	
+	/* Smooth transitions for theme changes */
+	.theme-transition {
+		transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+	}
+}
+
+@layer utilities {
+	/* Custom animations */
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+	
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateX(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+	
+	@keyframes scaleIn {
+		from {
+			opacity: 0;
+			transform: scale(0.9);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+	
+	.animate-fadeIn {
+		animation: fadeIn 0.3s ease-out;
+	}
+	
+	.animate-slideIn {
+		animation: slideIn 0.3s ease-out;
+	}
+	
+	.animate-scaleIn {
+		animation: scaleIn 0.3s ease-out;
+	}
+	
+	/* Hover glow effect */
+	.hover-glow:hover {
+		box-shadow: 0 0 20px hsl(var(--p) / 0.3);
+	}
+	
+	/* Text gradient */
+	.text-gradient {
+		@apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary;
+	}
+}
+
