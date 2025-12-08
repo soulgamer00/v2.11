@@ -2,6 +2,7 @@
 	import { superForm } from 'sveltekit-superforms';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -72,46 +73,62 @@
 		}
 	});
 
-	// Handle province change
-	function handleProvinceChange(e: Event) {
-		const target = e.target as HTMLSelectElement;
-		const provinceId = parseInt(target.value);
-		if (provinceId) {
-			loadAmphoes(provinceId);
+	// Handle province select
+	async function handleProvinceSelect(province: any) {
+		if (province && province.id) {
+			$form.patient.provinceId = province.id;
+			await loadAmphoes(province.id);
+			$form.patient.amphoeId = 0;
+			$form.patient.tambonId = 0;
 		}
-		$form.patient.amphoeId = 0;
-		$form.patient.tambonId = 0;
 	}
 
-	// Handle amphoe change
-	function handleAmphoeChange(e: Event) {
-		const target = e.target as HTMLSelectElement;
-		const amphoeId = parseInt(target.value);
-		if (amphoeId) {
-			loadTambons(amphoeId);
+	// Handle amphoe select
+	async function handleAmphoeSelect(amphoe: any) {
+		if (amphoe && amphoe.id) {
+			$form.patient.amphoeId = amphoe.id;
+			await loadTambons(amphoe.id);
+			$form.patient.tambonId = 0;
 		}
-		$form.patient.tambonId = 0;
 	}
 
-	// Handle sick province change
-	function handleSickProvinceChange(e: Event) {
-		const target = e.target as HTMLSelectElement;
-		const provinceId = parseInt(target.value);
-		if (provinceId) {
-			loadSickAmphoes(provinceId);
+	// Handle tambon select
+	function handleTambonSelect(tambon: any) {
+		if (tambon && tambon.id) {
+			$form.patient.tambonId = tambon.id;
+			if (tambon.postalCode) {
+				$form.patient.postalCode = tambon.postalCode;
+			}
 		}
-		$form.sickAmphoeId = 0;
-		$form.sickTambonId = 0;
 	}
 
-	// Handle sick amphoe change
-	function handleSickAmphoeChange(e: Event) {
-		const target = e.target as HTMLSelectElement;
-		const amphoeId = parseInt(target.value);
-		if (amphoeId) {
-			loadSickTambons(amphoeId);
+	// Handle sick province select
+	async function handleSickProvinceSelect(province: any) {
+		if (province && province.id) {
+			$form.sickProvinceId = province.id;
+			await loadSickAmphoes(province.id);
+			$form.sickAmphoeId = 0;
+			$form.sickTambonId = 0;
 		}
-		$form.sickTambonId = 0;
+	}
+
+	// Handle sick amphoe select
+	async function handleSickAmphoeSelect(amphoe: any) {
+		if (amphoe && amphoe.id) {
+			$form.sickAmphoeId = amphoe.id;
+			await loadSickTambons(amphoe.id);
+			$form.sickTambonId = 0;
+		}
+	}
+
+	// Handle sick tambon select
+	function handleSickTambonSelect(tambon: any) {
+		if (tambon && tambon.id) {
+			$form.sickTambonId = tambon.id;
+			if (tambon.postalCode) {
+				$form.sickPostalCode = tambon.postalCode;
+			}
+		}
 	}
 
 	// Copy address from patient
@@ -174,20 +191,23 @@
 
 					<!-- Prefix -->
 					<div class="form-control">
-						<label class="label" for="prefix">
-							<span class="label-text">คำนำหน้า <span class="text-error">*</span></span>
-						</label>
-						<select
-							id="prefix"
+						<AutocompleteSearch
 							bind:value={$form.patient.prefix}
-							class="select select-bordered"
-							required
-						>
-							<option value="">เลือกคำนำหน้า</option>
-							{#each data.masterData.PREFIX as prefix}
-								<option value={prefix.value}>{prefix.value}</option>
-							{/each}
-						</select>
+							label="คำนำหน้า"
+							placeholder="เลือกคำนำหน้า"
+							clientData={data.masterData?.PREFIX || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={(item) => {
+								if (item?.value) {
+									$form.patient.prefix = item.value;
+								}
+							}}
+							displayFn={(item) => item?.value || ''}
+							size="sm"
+						/>
 					</div>
 
 					<!-- Gender -->
@@ -250,52 +270,65 @@
 
 					<!-- Nationality -->
 					<div class="form-control">
-						<label class="label" for="nationality">
-							<span class="label-text">สัญชาติ</span>
-						</label>
-						<select
-							id="nationality"
+						<AutocompleteSearch
 							bind:value={$form.patient.nationality}
-							class="select select-bordered"
-						>
-							{#each data.masterData.NATIONALITY as nat}
-								<option value={nat.value}>{nat.value}</option>
-							{/each}
-						</select>
+							label="สัญชาติ"
+							placeholder="เลือกสัญชาติ"
+							clientData={data.masterData?.NATIONALITY || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={(item) => {
+								if (item?.value) {
+									$form.patient.nationality = item.value;
+								}
+							}}
+							displayFn={(item) => item?.value || ''}
+							size="sm"
+						/>
 					</div>
 
 					<!-- Occupation -->
 					<div class="form-control">
-						<label class="label" for="occupation">
-							<span class="label-text">อาชีพ</span>
-						</label>
-						<select
-							id="occupation"
+						<AutocompleteSearch
 							bind:value={$form.patient.occupation}
-							class="select select-bordered"
-						>
-							<option value="">เลือกอาชีพ</option>
-							{#each data.masterData.OCCUPATION as occ}
-								<option value={occ.value}>{occ.value}</option>
-							{/each}
-						</select>
+							label="อาชีพ"
+							placeholder="เลือกอาชีพ"
+							clientData={data.masterData?.OCCUPATION || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={(item) => {
+								if (item?.value) {
+									$form.patient.occupation = item.value;
+								}
+							}}
+							displayFn={(item) => item?.value || ''}
+							size="sm"
+						/>
 					</div>
 
 					<!-- Marital Status -->
 					<div class="form-control">
-						<label class="label" for="maritalStatus">
-							<span class="label-text">สถานภาพ</span>
-						</label>
-						<select
-							id="maritalStatus"
+						<AutocompleteSearch
 							bind:value={$form.patient.maritalStatus}
-							class="select select-bordered"
-						>
-							<option value="">เลือกสถานภาพ</option>
-							{#each data.masterData.MARITAL_STATUS as status}
-								<option value={status.value}>{status.value}</option>
-							{/each}
-						</select>
+							label="สถานภาพ"
+							placeholder="เลือกสถานภาพ"
+							clientData={data.masterData?.MARITAL_STATUS || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={(item) => {
+								if (item?.value) {
+									$form.patient.maritalStatus = item.value;
+								}
+							}}
+							displayFn={(item) => item?.value || ''}
+							size="sm"
+						/>
 					</div>
 
 					<!-- Phone -->
@@ -328,31 +361,69 @@
 						<input type="text" bind:value={$form.patient.road} class="input input-bordered" />
 					</div>
 					<div class="form-control">
-						<label class="label"><span>จังหวัด</span></label>
-						<select bind:value={$form.patient.provinceId} class="select select-bordered" onchange={handleProvinceChange}>
-							<option value={0}>เลือกจังหวัด</option>
-							{#each data.provinces as province}
-								<option value={province.id}>{province.nameTh}</option>
-							{/each}
-						</select>
+						<AutocompleteSearch
+							bind:value={$form.patient.provinceId}
+							label="จังหวัด"
+							placeholder="เลือกจังหวัด"
+							clientData={data.provinces || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
+									item.code?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={handleProvinceSelect}
+							displayFn={(item) => item?.nameTh || ''}
+							detailFn={(item) => `รหัส: ${item?.code || ''}`}
+							valueKey="id"
+							displayKey="nameTh"
+							size="sm"
+						/>
 					</div>
 					<div class="form-control">
-						<label class="label"><span>อำเภอ/เขต</span></label>
-						<select bind:value={$form.patient.amphoeId} class="select select-bordered" onchange={handleAmphoeChange} disabled={!$form.patient.provinceId}>
-							<option value={0}>เลือกอำเภอ</option>
-							{#each amphoes as amphoe}
-								<option value={amphoe.id}>{amphoe.nameTh}</option>
-							{/each}
-						</select>
+						<AutocompleteSearch
+							bind:value={$form.patient.amphoeId}
+							label="อำเภอ/เขต"
+							placeholder="เลือกอำเภอ/เขต"
+							clientData={amphoes || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
+									item.code?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={handleAmphoeSelect}
+							displayFn={(item) => item?.nameTh || ''}
+							detailFn={(item) => `รหัส: ${item?.code || ''}`}
+							valueKey="id"
+							displayKey="nameTh"
+							size="sm"
+							disabled={!$form.patient.provinceId}
+						/>
 					</div>
 					<div class="form-control">
-						<label class="label"><span>ตำบล/แขวง</span></label>
-						<select bind:value={$form.patient.tambonId} class="select select-bordered" disabled={!$form.patient.amphoeId}>
-							<option value={0}>เลือกตำบล</option>
-							{#each tambons as tambon}
-								<option value={tambon.id}>{tambon.nameTh}</option>
-							{/each}
-						</select>
+						<AutocompleteSearch
+							bind:value={$form.patient.tambonId}
+							label="ตำบล/แขวง"
+							placeholder="เลือกตำบล/แขวง"
+							clientData={tambons || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
+									item.code?.toLowerCase().includes(query.toLowerCase()) ||
+									(item.postalCode && item.postalCode.includes(query)) || false;
+							}}
+							onSelect={handleTambonSelect}
+							displayFn={(item) => item?.nameTh || ''}
+							detailFn={(item) => {
+								const details = [];
+								if (item?.code) details.push(`รหัส: ${item.code}`);
+								if (item?.postalCode) details.push(`ไปรษณีย์: ${item.postalCode}`);
+								return details.join(' | ');
+							}}
+							valueKey="id"
+							displayKey="nameTh"
+							size="sm"
+							disabled={!$form.patient.amphoeId}
+						/>
 					</div>
 					<div class="form-control">
 						<label class="label"><span>รหัสไปรษณีย์</span></label>
@@ -369,22 +440,67 @@
 
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<div class="form-control md:col-span-2">
-						<label class="label"><span>หน่วยงานที่รายงาน <span class="text-error">*</span></span></label>
-						<select bind:value={$form.hospitalId} class="select select-bordered" required>
-							<option value={0}>เลือกหน่วยงาน</option>
-							{#each data.hospitals as hospital}
-								<option value={hospital.id}>{hospital.name}</option>
-							{/each}
-						</select>
+						<AutocompleteSearch
+							bind:value={$form.hospitalId}
+							label="หน่วยงานที่รายงาน"
+							placeholder="เลือกหน่วยงาน"
+							clientData={data.hospitals || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								const q = query.toLowerCase();
+								return item.name?.toLowerCase().includes(q) ||
+									item.code9?.toLowerCase().includes(q) ||
+									item.code9New?.toLowerCase().includes(q) ||
+									item.code5?.toLowerCase().includes(q) || false;
+							}}
+							onSelect={(item) => {
+								if (item?.id) {
+									$form.hospitalId = item.id;
+								}
+							}}
+							displayFn={(item) => item?.name || ''}
+							detailFn={(item) => {
+								const details = [];
+								if (item?.code9New) details.push(`รหัส: ${item.code9New}`);
+								if (item?.code5) details.push(`รหัส 5 หลัก: ${item.code5}`);
+								return details.join(' | ');
+							}}
+							valueKey="id"
+							displayKey="name"
+							size="sm"
+						/>
 					</div>
 					<div class="form-control md:col-span-2">
-						<label class="label"><span>โรค <span class="text-error">*</span></span></label>
-						<select bind:value={$form.diseaseId} class="select select-bordered" required>
-							<option value={0}>เลือกโรค</option>
-							{#each data.diseases as disease}
-								<option value={disease.id}>{disease.nameTh} ({disease.code})</option>
-							{/each}
-						</select>
+						<AutocompleteSearch
+							bind:value={$form.diseaseId}
+							label="โรค"
+							placeholder="เลือกโรค"
+							clientData={data.diseases || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								const q = query.toLowerCase();
+								return item.nameTh?.toLowerCase().includes(q) ||
+									item.nameEn?.toLowerCase().includes(q) ||
+									item.abbreviation?.toLowerCase().includes(q) ||
+									item.code?.toLowerCase().includes(q) || false;
+							}}
+							onSelect={(item) => {
+								if (item?.id) {
+									$form.diseaseId = item.id;
+								}
+							}}
+							displayFn={(item) => item?.nameTh || ''}
+							detailFn={(item) => {
+								const details = [];
+								if (item?.code) details.push(`รหัส: ${item.code}`);
+								if (item?.abbreviation) details.push(`ย่อ: ${item.abbreviation}`);
+								if (item?.nameEn) details.push(`EN: ${item.nameEn}`);
+								return details.join(' | ');
+							}}
+							valueKey="id"
+							displayKey="nameTh"
+							size="sm"
+						/>
 					</div>
 					<div class="form-control">
 						<label class="label"><span>วันที่เริ่มป่วย <span class="text-error">*</span></span></label>
@@ -485,19 +601,25 @@
 						<input type="text" bind:value={$form.sickRoad} class="input input-bordered" disabled={$form.useSameAddress} />
 					</div>
 					<div class="form-control">
-						<label class="label"><span>จังหวัด <span class="text-error">*</span></span></label>
-						<select 
-							bind:value={$form.sickProvinceId} 
-							class="select select-bordered" 
-							class:select-error={$errors.sickProvinceId}
-							onchange={handleSickProvinceChange} 
+						<AutocompleteSearch
+							bind:value={$form.sickProvinceId}
+							label="จังหวัด"
+							placeholder="เลือกจังหวัด"
+							clientData={data.provinces || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
+									item.code?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={handleSickProvinceSelect}
+							displayFn={(item) => item?.nameTh || ''}
+							detailFn={(item) => `รหัส: ${item?.code || ''}`}
+							valueKey="id"
+							displayKey="nameTh"
+							size="sm"
 							disabled={$form.useSameAddress}
-						>
-							<option value={0}>เลือกจังหวัด</option>
-							{#each data.provinces as province}
-								<option value={province.id}>{province.nameTh}</option>
-							{/each}
-						</select>
+							class={$errors.sickProvinceId ? 'input-error' : ''}
+						/>
 						{#if $errors.sickProvinceId}
 							<label class="label">
 								<span class="label-text-alt text-error">{$errors.sickProvinceId}</span>
@@ -505,19 +627,25 @@
 						{/if}
 					</div>
 					<div class="form-control">
-						<label class="label"><span>อำเภอ/เขต <span class="text-error">*</span></span></label>
-						<select 
-							bind:value={$form.sickAmphoeId} 
-							class="select select-bordered" 
-							class:select-error={$errors.sickAmphoeId}
-							onchange={handleSickAmphoeChange} 
+						<AutocompleteSearch
+							bind:value={$form.sickAmphoeId}
+							label="อำเภอ/เขต"
+							placeholder="เลือกอำเภอ/เขต"
+							clientData={sickAmphoes || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
+									item.code?.toLowerCase().includes(query.toLowerCase()) || false;
+							}}
+							onSelect={handleSickAmphoeSelect}
+							displayFn={(item) => item?.nameTh || ''}
+							detailFn={(item) => `รหัส: ${item?.code || ''}`}
+							valueKey="id"
+							displayKey="nameTh"
+							size="sm"
 							disabled={$form.useSameAddress || !$form.sickProvinceId}
-						>
-							<option value={0}>เลือกอำเภอ</option>
-							{#each sickAmphoes as amphoe}
-								<option value={amphoe.id}>{amphoe.nameTh}</option>
-							{/each}
-						</select>
+							class={$errors.sickAmphoeId ? 'input-error' : ''}
+						/>
 						{#if $errors.sickAmphoeId}
 							<label class="label">
 								<span class="label-text-alt text-error">{$errors.sickAmphoeId}</span>
@@ -525,18 +653,31 @@
 						{/if}
 					</div>
 					<div class="form-control">
-						<label class="label"><span>ตำบล/แขวง <span class="text-error">*</span></span></label>
-						<select 
-							bind:value={$form.sickTambonId} 
-							class="select select-bordered" 
-							class:select-error={$errors.sickTambonId}
+						<AutocompleteSearch
+							bind:value={$form.sickTambonId}
+							label="ตำบล/แขวง"
+							placeholder="เลือกตำบล/แขวง"
+							clientData={sickTambons || []}
+							clientSearchFn={(item, query) => {
+								if (!item || !query) return false;
+								return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
+									item.code?.toLowerCase().includes(query.toLowerCase()) ||
+									(item.postalCode && item.postalCode.includes(query)) || false;
+							}}
+							onSelect={handleSickTambonSelect}
+							displayFn={(item) => item?.nameTh || ''}
+							detailFn={(item) => {
+								const details = [];
+								if (item?.code) details.push(`รหัส: ${item.code}`);
+								if (item?.postalCode) details.push(`ไปรษณีย์: ${item.postalCode}`);
+								return details.join(' | ');
+							}}
+							valueKey="id"
+							displayKey="nameTh"
+							size="sm"
 							disabled={$form.useSameAddress || !$form.sickAmphoeId}
-						>
-							<option value={0}>เลือกตำบล</option>
-							{#each sickTambons as tambon}
-								<option value={tambon.id}>{tambon.nameTh}</option>
-							{/each}
-						</select>
+							class={$errors.sickTambonId ? 'input-error' : ''}
+						/>
 						{#if $errors.sickTambonId}
 							<label class="label">
 								<span class="label-text-alt text-error">{$errors.sickTambonId}</span>

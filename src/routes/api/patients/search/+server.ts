@@ -40,7 +40,19 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 			prefix: true,
 			firstName: true,
 			lastName: true,
-			phone: true
+			phone: true,
+			gender: true,
+			birthDate: true,
+			nationality: true,
+			maritalStatus: true,
+			occupation: true,
+			addressNo: true,
+			moo: true,
+			road: true,
+			provinceId: true,
+			amphoeId: true,
+			tambonId: true,
+			postalCode: true
 		},
 		take: 15, // Increased from 10 to show more results
 		orderBy: [

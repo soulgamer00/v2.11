@@ -3,24 +3,27 @@
 	import { browser } from '$app/environment';
 
 	interface Props {
-		value: string;
+		value?: string | number | null | undefined;
 		placeholder?: string;
 		label?: string;
 		searchUrl?: string;
 		onSearch?: (query: string) => Promise<any[]>;
-		clientData?: any[]; // For client-side search
+		clientData?: any[] | null | undefined; // For client-side search
 		clientSearchFn?: (item: any, query: string) => boolean; // Custom search function for client data
 		onSelect?: (item: any) => void;
 		displayFn?: (item: any) => string;
 		detailFn?: (item: any) => string;
+		valueKey?: string; // Key to use as value (e.g., 'id', 'value')
+		displayKey?: string; // Key to display in input (e.g., 'nameTh', 'name')
 		minLength?: number;
 		debounceMs?: number;
 		class?: string;
 		size?: 'sm' | 'md' | 'lg';
+		disabled?: boolean;
 	}
 
 	let {
-		value = $bindable(''),
+		value = $bindable<string | number | null | undefined>(undefined),
 		placeholder = 'ค้นหา...',
 		label,
 		searchUrl,
@@ -28,24 +31,103 @@
 		clientData,
 		clientSearchFn,
 		onSelect,
-		displayFn = (item: any) => item.name || item.title || item.firstName || String(item),
-		detailFn = (item: any) => '',
+		displayFn = (item: any) => {
+			if (!item) return '';
+			try {
+				return item?.name || item?.title || item?.firstName || String(item || '') || '';
+			} catch {
+				return '';
+			}
+		},
+		detailFn = (item: any) => {
+			if (!item) return '';
+			try {
+				return '';
+			} catch {
+				return '';
+			}
+		},
+		valueKey,
+		displayKey,
 		minLength = 1,
 		debounceMs = 200,
 		class: className = '',
-		size = 'md'
+		size = 'md',
+		disabled = false
 	}: Props = $props();
+
+	// Normalize undefined/null values to prevent props_invalid_value error
+	$effect(() => {
+		if (value === undefined || value === null) {
+			// Only normalize if we have a valueKey to determine the type
+			if (valueKey) {
+				value = valueKey === 'id' ? 0 : '';
+			}
+		}
+	});
 
 	let searchResults = $state<any[]>([]);
 	let showSuggestions = $state(false);
 	let selectedIndex = $state(-1);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 	let isLoading = $state(false);
+	let displayValue = $state<string>('');
+
+	// Sync displayValue with value when valueKey/displayKey is used
+	$effect(() => {
+		try {
+			// If using valueKey/displayKey, find the display value from clientData
+			if (valueKey && displayKey) {
+				if (clientData && Array.isArray(clientData) && clientData.length > 0) {
+					// Find selected item by valueKey
+					const selectedItem = clientData.find((item: any) => {
+						if (!item || item[valueKey] === undefined || item[valueKey] === null) return false;
+						return item[valueKey] === value;
+					});
+					if (selectedItem && selectedItem[displayKey] !== undefined && selectedItem[displayKey] !== null) {
+						displayValue = String(selectedItem[displayKey]);
+					} else if (value === undefined || value === null || value === '' || (typeof value === 'number' && value === 0)) {
+						displayValue = '';
+					}
+					// If value exists but item not found, keep current displayValue
+				} else {
+					// clientData not loaded yet, set to empty if value is empty
+					if (value === undefined || value === null || value === '' || (typeof value === 'number' && value === 0)) {
+						displayValue = '';
+					}
+				}
+			} else {
+				// For non-valueKey usage, convert to string directly
+				if (value === undefined || value === null) {
+					displayValue = '';
+				} else {
+					try {
+						const val = String(value);
+						displayValue = val || '';
+					} catch {
+						displayValue = '';
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Error syncing displayValue:', error);
+			displayValue = '';
+		}
+	});
 
 	// Autocomplete search with dropdown
 	async function handleSearchInput(inputValue: string) {
-		value = inputValue;
+		displayValue = inputValue;
 		selectedIndex = -1;
+		
+		// Clear value if using valueKey and input is empty
+		if (valueKey && inputValue === '') {
+			if (valueKey === 'id') {
+				value = 0;
+			} else {
+				value = '';
+			}
+		}
 
 		if (searchTimeout) {
 			clearTimeout(searchTimeout);
@@ -63,7 +145,7 @@
 				let results: any[] = [];
 				
 				// Client-side search
-				if (clientData && clientData.length > 0) {
+				if (clientData && Array.isArray(clientData) && clientData.length > 0) {
 					const queryLower = inputValue.toLowerCase();
 					if (clientSearchFn) {
 						results = clientData.filter(item => {
@@ -102,7 +184,7 @@
 				}
 				
 				searchResults = results;
-				showSuggestions = results.length > 0 && inputValue.length >= minLength;
+				showSuggestions = results.length > 0 && displayValue.length >= minLength;
 			} catch (error) {
 				console.error('Search error:', error);
 				searchResults = [];
@@ -114,12 +196,37 @@
 	}
 
 	function selectItem(item: any) {
-		if (onSelect) {
-			onSelect(item);
+		if (!item) return;
+		
+		try {
+			if (valueKey && displayKey) {
+				// Set value to the valueKey property
+				const newValue = item[valueKey];
+				if (newValue !== undefined && newValue !== null) {
+					value = newValue;
+				} else {
+					value = valueKey === 'id' ? 0 : '';
+				}
+				// Set displayValue to the displayKey property
+				const display = item[displayKey];
+				displayValue = display !== undefined && display !== null ? String(display) : '';
+			} else {
+				// Use displayFn for value
+				const display = displayFn(item);
+				const displayStr = display ? String(display) : '';
+				value = displayStr;
+				displayValue = displayStr;
+			}
+			
+			if (onSelect) {
+				onSelect(item);
+			}
+			showSuggestions = false;
+			selectedIndex = -1;
+			searchResults = [];
+		} catch (error) {
+			console.error('Error selecting item:', error);
 		}
-		showSuggestions = false;
-		selectedIndex = -1;
-		searchResults = [];
 	}
 
 	function handleKeyDown(e: KeyboardEvent) {
@@ -167,17 +274,18 @@
 	<div class="relative">
 		<input
 			type="text"
-			bind:value={value}
+			bind:value={displayValue}
 			oninput={(e) => handleSearchInput(e.currentTarget.value)}
 			onkeydown={handleKeyDown}
 			onfocus={() => {
-				if (searchResults.length > 0 && value.length >= minLength) {
+				if (searchResults.length > 0 && displayValue.length >= minLength) {
 					showSuggestions = true;
 				}
 			}}
 			{placeholder}
-			class="input input-bordered w-full pr-10 {size === 'sm' ? 'input-sm' : size === 'lg' ? 'input-lg' : ''}"
+			class="input input-bordered w-full pr-10 {size === 'sm' ? 'input-sm' : size === 'lg' ? 'input-lg' : ''} {className.includes('input-error') ? 'input-error' : ''}"
 			autocomplete="off"
+			{disabled}
 		/>
 		<Icon name="search" size={20} class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40" />
 		{#if isLoading}
@@ -189,6 +297,22 @@
 					พบ {searchResults.length} รายการที่ใกล้เคียง
 				</div>
 				{#each searchResults as result, index}
+					{@const displayText = (() => {
+						try {
+							const d = displayFn(result);
+							return d ? String(d) : 'ไม่มีข้อมูล';
+						} catch {
+							return 'ไม่มีข้อมูล';
+						}
+					})()}
+					{@const detailText = (() => {
+						try {
+							const d = detailFn(result);
+							return d ? String(d).trim() : '';
+						} catch {
+							return '';
+						}
+					})()}
 					<button
 						type="button"
 						class="w-full text-left px-4 py-3 hover:bg-primary hover:text-primary-content transition-colors {index === selectedIndex
@@ -200,15 +324,15 @@
 						<div class="flex items-start justify-between gap-2">
 							<div class="flex-1">
 								<div class="font-semibold text-base">
-									{displayFn(result) || 'ไม่มีข้อมูล'}
+									{displayText}
 								</div>
-								{#if detailFn(result)}
+								{#if detailText}
 									<div class="text-sm mt-1 text-base-content/60">
-										{detailFn(result)}
+										{detailText}
 									</div>
 								{/if}
 							</div>
-							<div class="text-xs text-base-content/40">
+							<div class="text-xs text-base-content/60">
 								คลิกเพื่อเลือก
 							</div>
 						</div>
@@ -216,7 +340,7 @@
 				{/each}
 			</div>
 		{/if}
-		{#if showSuggestions && searchResults.length === 0 && value.length >= minLength && !isLoading}
+		{#if showSuggestions && searchResults.length === 0 && displayValue.length >= minLength && !isLoading}
 			<div class="absolute z-50 w-full mt-1 bg-base-100 border-2 border-primary rounded-lg shadow-2xl">
 				<div class="px-4 py-3 text-center text-base-content/60">
 					ไม่พบข้อมูลที่ใกล้เคียง
