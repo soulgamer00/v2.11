@@ -366,8 +366,8 @@
 									<th>กลุ่มอายุ</th>
 									<th class="text-right">จำนวนผู้ป่วย</th>
 									<th class="text-right">อัตราป่วย (/100,000)</th>
-									<th class="text-right">จำนวนตาย</th>
-									<th class="text-right">อัตราป่วยตาย (%)</th>
+									<th class="text-right">จำนวนเสียชีวิต</th>
+									<th class="text-right">อัตราป่วยเสียชีวิต (%)</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -413,8 +413,8 @@
 									<th>ปี</th>
 									<th class="text-right">จำนวนป่วย</th>
 									<th class="text-right">อัตราป่วย (/100,000 ประชากร)</th>
-									<th class="text-right">จำนวนตาย</th>
-									<th class="text-right">อัตราตาย (%)</th>
+									<th class="text-right">จำนวนเสียชีวิต</th>
+									<th class="text-right">อัตราเสียชีวิต (%)</th>
 								</tr>
 							</thead>
 							<tbody>

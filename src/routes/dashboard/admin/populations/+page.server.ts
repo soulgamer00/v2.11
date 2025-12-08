@@ -130,6 +130,117 @@ export const actions: Actions = {
 			console.error('Population update error:', error);
 			return fail(500, { message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' });
 		}
+	},
+
+	deletePopulation: async ({ request, locals }) => {
+		const user = locals.user;
+		if (!user || !hasRole(user, ['SUPERADMIN'])) {
+			return fail(403, { message: 'ไม่มีสิทธิ์เข้าถึง' });
+		}
+
+		const formData = await request.formData();
+		const hospitalId = parseInt(formData.get('hospitalId')?.toString() || '0');
+		const year = parseInt(formData.get('year')?.toString() || '0');
+
+		if (!hospitalId || !year) {
+			return fail(400, { message: 'ข้อมูลไม่ครบถ้วน' });
+		}
+
+		try {
+			// Get hospital name for audit log
+			const hospital = await prisma.hospital.findUnique({
+				where: { id: hospitalId },
+				select: { name: true }
+			});
+
+			// Delete population record
+			await prisma.population.delete({
+				where: {
+					hospitalId_year: {
+						hospitalId,
+						year
+					}
+				}
+			});
+
+			await logAudit(
+				user.id,
+				AuditActions.DELETE,
+				`${AuditResources.POPULATION}:${hospital?.name || hospitalId} - Year ${year}`
+			);
+
+			return { success: true, message: `ลบข้อมูลประชากรสำเร็จ` };
+		} catch (error) {
+			console.error('Population delete error:', error);
+			return fail(500, { message: 'เกิดข้อผิดพลาดในการลบข้อมูล' });
+		}
+	},
+
+	updateSinglePopulation: async ({ request, locals }) => {
+		const user = locals.user;
+		if (!user || !hasRole(user, ['SUPERADMIN'])) {
+			return fail(403, { message: 'ไม่มีสิทธิ์เข้าถึง' });
+		}
+
+		const formData = await request.formData();
+		const hospitalId = parseInt(formData.get('hospitalId')?.toString() || '0');
+		const year = parseInt(formData.get('year')?.toString() || '0');
+		const amount = parseInt(formData.get('amount')?.toString() || '0');
+
+		if (!hospitalId || !year) {
+			return fail(400, { message: 'ข้อมูลไม่ครบถ้วน' });
+		}
+
+		if (amount < 0) {
+			return fail(400, { message: 'จำนวนประชากรต้องไม่น้อยกว่า 0' });
+		}
+
+		try {
+			// Get hospital name for audit log
+			const hospital = await prisma.hospital.findUnique({
+				where: { id: hospitalId },
+				select: { name: true }
+			});
+
+			// Check if exists
+			const existing = await prisma.population.findUnique({
+				where: {
+					hospitalId_year: {
+						hospitalId,
+						year
+					}
+				}
+			});
+
+			// Update or create population
+			await prisma.population.upsert({
+				where: {
+					hospitalId_year: {
+						hospitalId,
+						year
+					}
+				},
+				update: {
+					amount
+				},
+				create: {
+					hospitalId,
+					year,
+					amount
+				}
+			});
+
+			await logAudit(
+				user.id,
+				existing ? AuditActions.UPDATE : AuditActions.CREATE,
+				`${AuditResources.POPULATION}:${hospital?.name || hospitalId} - Year ${year} (${amount} people)`
+			);
+
+			return { success: true, message: `บันทึกข้อมูลประชากรของ ${hospital?.name || 'หน่วยงาน'} สำเร็จ` };
+		} catch (error) {
+			console.error('Single population update error:', error);
+			return fail(500, { message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' });
+		}
 	}
 };
 

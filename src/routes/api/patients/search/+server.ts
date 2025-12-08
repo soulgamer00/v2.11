@@ -24,8 +24,17 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 				? [{ idCard: { contains: query } }]
 				: [
 						{ firstName: { contains: query, mode: 'insensitive' } },
-						{ lastName: { contains: query, mode: 'insensitive' } }
+						{ lastName: { contains: query, mode: 'insensitive' } },
+						{ idCard: { contains: query } }
 				  ]
+		},
+		select: {
+			id: true,
+			idCard: true,
+			prefix: true,
+			firstName: true,
+			lastName: true,
+			phone: true
 		},
 		take: 10,
 		orderBy: {
@@ -35,6 +44,9 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	return json(patients);
 };
+
+
+
 
 
 

@@ -97,14 +97,14 @@ export const RateLimitConfigs = {
 
 	// Import: 3 imports per hour per user
 	IMPORT: {
-		windowMs: 60 * 60 * 1000, // 1 hour
-		maxRequests: 3,
+		windowMs: 15 * 60 * 1000, // 1 hour
+		maxRequests: 10,
 		message: 'คุณส่งคำขอ import มากเกินไป กรุณาลองใหม่อีกครั้งใน 1 ชั่วโมง'
 	} as RateLimitConfig,
 
 	// Export: 10 exports per hour per user
 	EXPORT: {
-		windowMs: 60 * 60 * 1000, // 1 hour
+		windowMs: 15 * 60 * 1000, // 1 hour
 		maxRequests: 10,
 		message: 'คุณส่งคำขอ export มากเกินไป กรุณาลองใหม่อีกครั้งใน 1 ชั่วโมง'
 	} as RateLimitConfig,

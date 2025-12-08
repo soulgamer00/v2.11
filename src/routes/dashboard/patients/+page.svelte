@@ -3,18 +3,82 @@
 	import { formatDateThai } from '$lib/utils/date';
 	import { goto } from '$app/navigation';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import { browser } from '$app/environment';
 
 	let { data }: { data: PageData } = $props();
 
 	let searchQuery = $state('');
+	let searchResults = $state<any[]>([]);
+	let showSuggestions = $state(false);
+	let selectedIndex = $state(-1);
+	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Autocomplete search
+	async function handleSearchInput(value: string) {
+		searchQuery = value;
+		showSuggestions = false;
+		selectedIndex = -1;
+
+		if (searchTimeout) {
+			clearTimeout(searchTimeout);
+		}
+
+		if (!value || value.length < 2) {
+			searchResults = [];
+			return;
+		}
+
+		searchTimeout = setTimeout(async () => {
+			try {
+				const response = await fetch(`/api/patients/search?q=${encodeURIComponent(value)}`);
+				const results = await response.json();
+				searchResults = results;
+				showSuggestions = results.length > 0;
+			} catch (error) {
+				console.error('Search error:', error);
+				searchResults = [];
+			}
+		}, 300);
+	}
+
+	function selectPatient(patient: any) {
+		searchQuery = `${patient.prefix || ''} ${patient.firstName} ${patient.lastName}`.trim();
+		showSuggestions = false;
+		selectedIndex = -1;
+		searchResults = [];
+	}
+
+	function handleKeyDown(e: KeyboardEvent) {
+		if (!showSuggestions || searchResults.length === 0) return;
+
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			selectedIndex = Math.min(selectedIndex + 1, searchResults.length - 1);
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			selectedIndex = Math.max(selectedIndex - 1, -1);
+		} else if (e.key === 'Enter' && selectedIndex >= 0) {
+			e.preventDefault();
+			selectPatient(searchResults[selectedIndex]);
+		} else if (e.key === 'Escape') {
+			showSuggestions = false;
+			selectedIndex = -1;
+		}
+	}
+
+	// Filter patients based on search query
 	let filteredPatients = $derived(
-		data.patients.filter((p) =>
-			searchQuery
-				? p.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				  p.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				  p.idCard?.includes(searchQuery)
-				: true
-		)
+		searchQuery && searchResults.length > 0
+			? data.patients.filter((p) =>
+					searchResults.some((result) => result.id === p.id)
+			  )
+			: searchQuery
+				? data.patients.filter((p) =>
+						p.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						p.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						p.idCard?.includes(searchQuery)
+				  )
+				: data.patients
 	);
 
 	async function handleDelete(id: string) {
@@ -37,6 +101,23 @@
 			alert(result.message || 'เกิดข้อผิดพลาดในการลบข้อมูล');
 		}
 	}
+
+	// Close suggestions when clicking outside
+	if (browser) {
+		$effect(() => {
+			function handleClickOutside(e: MouseEvent) {
+				const target = e.target as HTMLElement;
+				if (!target.closest('.search-container')) {
+					showSuggestions = false;
+				}
+			}
+
+			if (showSuggestions) {
+				document.addEventListener('click', handleClickOutside);
+				return () => document.removeEventListener('click', handleClickOutside);
+			}
+		});
+	}
 </script>
 
 <svelte:head>
@@ -58,16 +139,50 @@
 		</a>
 	</div>
 
-	<!-- Search -->
+	<!-- Search with Autocomplete -->
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
-			<div class="form-control">
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="ค้นหา: ชื่อ, นามสกุล, เลขบัตรประชาชน..."
-					class="input input-bordered"
-				/>
+			<div class="form-control search-container relative">
+				<label class="label">
+					<span class="label-text font-semibold">ค้นหาผู้ป่วย</span>
+				</label>
+				<div class="relative">
+					<input
+						type="text"
+						bind:value={searchQuery}
+						oninput={(e) => handleSearchInput(e.currentTarget.value)}
+						onkeydown={handleKeyDown}
+						placeholder="พิมพ์ชื่อ, นามสกุล, หรือเลขบัตรประชาชน..."
+						class="input input-bordered w-full pr-10"
+						autocomplete="off"
+					/>
+					<Icon name="search" size={20} class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40" />
+				</div>
+				{#if showSuggestions && searchResults.length > 0}
+					<div class="absolute z-50 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+						{#each searchResults as result, index}
+							<button
+								type="button"
+								class="w-full text-left px-4 py-2 hover:bg-base-200 {index === selectedIndex
+									? 'bg-base-200'
+									: ''}"
+								onclick={() => selectPatient(result)}
+							>
+								<div class="font-semibold">
+									{result.prefix || ''} {result.firstName} {result.lastName}
+								</div>
+								<div class="text-sm text-base-content/60">
+									{#if result.idCard}
+										เลขบัตร: {result.idCard}
+									{/if}
+									{#if result.phone}
+										{#if result.idCard} • {/if}โทร: {result.phone}
+									{/if}
+								</div>
+							</button>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -133,18 +248,29 @@
 										<div class="badge badge-info">{patient._count.cases} รายงาน</div>
 									</td>
 									<td>
-										<div class="flex gap-2">
-											<a href="/dashboard/patients/{patient.id}" class="btn btn-ghost btn-sm">
-												ดูรายละเอียด
+										<div class="flex gap-1 sm:gap-2 items-center">
+											<a href="/dashboard/patients/{patient.id}" class="btn btn-ghost btn-sm btn-square" title="ดูรายละเอียด">
+												<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+												</svg>
 											</a>
 											{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN'}
+												<a
+													href="/dashboard/patients/{patient.id}/edit"
+													class="btn btn-ghost btn-sm btn-square hover:btn-primary transition-all"
+													aria-label="แก้ไข"
+													title="แก้ไขข้อมูลผู้ป่วย"
+												>
+													<Icon name="edit" size={18} />
+												</a>
 												<button
-													class="btn btn-ghost btn-sm hover:btn-error transition-all"
+													class="btn btn-ghost btn-sm btn-square hover:btn-error transition-all"
 													onclick={() => handleDelete(patient.id)}
 													aria-label="ลบ"
 													title="ลบผู้ป่วย (Soft Delete)"
 												>
-													<Icon name="delete" size={16} />
+													<Icon name="delete" size={18} />
 												</button>
 											{/if}
 										</div>

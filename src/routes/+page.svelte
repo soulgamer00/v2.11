@@ -146,7 +146,7 @@
 				</div>
 				<div class="stats bg-white/10 text-white backdrop-blur-md border border-white/20">
 					<div class="stat place-items-center p-4">
-						<div class="stat-title text-white/80">อัตราป่วยตาย</div>
+						<div class="stat-title text-white/80">อัตราป่วยเสียชีวิต</div>
 						<div class="stat-value text-2xl lg:text-3xl">{data.stats.mortalityRate}%</div>
 					</div>
 				</div>

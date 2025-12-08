@@ -420,7 +420,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress, 
 				let condition = null;
 				if (conditionStr.includes('หายแล้ว') || conditionStr === 'RECOVERED' || conditionStr.includes('หาย') || conditionStr.includes('ฟื้น')) {
 					condition = 'RECOVERED';
-				} else if (conditionStr.includes('เสียชีวิต') || conditionStr === 'DIED' || conditionStr.includes('ตาย')) {
+				} else if (conditionStr.includes('เสียชีวิต') || conditionStr === 'DIED' || conditionStr.includes('เสียชีวิต')) {
 					condition = 'DIED';
 				} else if (conditionStr.includes('รักษา') || conditionStr === 'UNDER_TREATMENT' || conditionStr.includes('อยู่ระหว่าง') || conditionStr.includes('ระหว่างการรักษา')) {
 					condition = 'UNDER_TREATMENT';
