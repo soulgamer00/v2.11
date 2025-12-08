@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -19,6 +20,28 @@
 	let showModal = $state(false);
 	let editMode = $state(false);
 	let searchQuery = $state(data.search || '');
+	let selectedItem: any = null;
+
+	// Filter masterData based on search
+	let filteredMasterData = $derived(
+		selectedItem
+			? data.masterData.filter(m => m.id === selectedItem.id)
+			: searchQuery
+				? data.masterData.filter((m) =>
+						m.value.toLowerCase().includes(searchQuery.toLowerCase())
+				  )
+				: data.masterData
+	);
+
+	function handleItemSelect(item: any) {
+		selectedItem = item;
+		searchQuery = item.value;
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		selectedItem = null;
+	}
 
 	const categoryLabels: Record<string, string> = {
 		PREFIX: 'คำนำหน้า',
@@ -71,21 +94,11 @@
 		}
 	}
 
-	function handleSearch() {
-		const params = new URLSearchParams();
-		params.set('category', data.category);
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
-		goto(`/dashboard/admin/masterdata?${params.toString()}`);
-	}
-
 	function changeCategory(category: string) {
+		searchQuery = '';
+		selectedItem = null;
 		const params = new URLSearchParams();
 		params.set('category', category);
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
 		goto(`/dashboard/admin/masterdata?${params.toString()}`);
 	}
 </script>
@@ -138,23 +151,27 @@
 	<!-- Search Bar -->
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
-			<div class="flex gap-2">
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="ค้นหา..."
-					class="input input-bordered flex-1"
-					onkeydown={(e) => e.key === 'Enter' && handleSearch()}
-				/>
-				<button class="btn btn-primary" onclick={handleSearch}>
-					<Icon name="search" size={20} />
+			<AutocompleteSearch
+				bind:value={searchQuery}
+				placeholder="ค้นหา..."
+				clientData={data.masterData}
+				clientSearchFn={(item, query) => {
+					if (!item || !query) return false;
+					const value = item.value || '';
+					return value.toLowerCase().includes(query.toLowerCase());
+				}}
+				onSelect={handleItemSelect}
+				displayFn={(item) => item.value || ''}
+				detailFn={(item) => {
+					return item.usageCount > 0 ? `ใช้งาน ${item.usageCount} รายการ` : 'ไม่มีการใช้งาน';
+				}}
+				size="sm"
+			/>
+			{#if searchQuery || selectedItem}
+				<button class="btn btn-ghost btn-sm mt-2" onclick={clearSearch}>
+					ล้างการค้นหา
 				</button>
-				{#if searchQuery}
-					<button class="btn btn-ghost" onclick={() => { searchQuery = ''; handleSearch(); }}>
-						ล้าง
-					</button>
-				{/if}
-			</div>
+			{/if}
 		</div>
 	</div>
 
@@ -169,6 +186,10 @@
 			<div class="stat-value text-success">
 				{data.masterData.filter((item) => item.usageCount > 0).length}
 			</div>
+		</div>
+		<div class="stat">
+			<div class="stat-title">แสดงผล</div>
+			<div class="stat-value text-info">{filteredMasterData.length}</div>
 		</div>
 	</div>
 
@@ -193,7 +214,7 @@
 								</td>
 							</tr>
 						{:else}
-							{#each data.masterData as item, index}
+							{#each filteredMasterData as item, index}
 								<tr>
 									<td>{index + 1}</td>
 									<td class="font-semibold">{item.value}</td>

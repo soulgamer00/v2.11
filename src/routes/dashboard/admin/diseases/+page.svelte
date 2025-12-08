@@ -2,6 +2,7 @@
 	import { superForm } from 'sveltekit-superforms';
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -20,6 +21,31 @@
 	let editMode = $state(false);
 	let searchQuery = $state(data.search || '');
 	let selectedDisease = $state<any>(null);
+	let selectedDiseaseForFilter: any = null;
+
+	// Filter diseases based on search
+	let filteredDiseases = $derived(
+		selectedDiseaseForFilter
+			? data.diseases.filter(d => d.id === selectedDiseaseForFilter.id)
+			: searchQuery
+				? data.diseases.filter((d) =>
+						d.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						d.nameTh.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						d.nameEn?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						d.abbreviation?.toLowerCase().includes(searchQuery.toLowerCase())
+				  )
+				: data.diseases
+	);
+
+	function handleDiseaseSelect(disease: any) {
+		selectedDiseaseForFilter = disease;
+		searchQuery = disease.nameTh;
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		selectedDiseaseForFilter = null;
+	}
 
 	function openAddModal() {
 		editMode = false;
@@ -74,13 +100,6 @@
 		}
 	}
 
-	function handleSearch() {
-		const params = new URLSearchParams();
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
-		goto(`/dashboard/admin/diseases?${params.toString()}`);
-	}
 </script>
 
 <svelte:head>
@@ -105,26 +124,41 @@
 	<!-- Search Bar -->
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
-			<div class="flex gap-2">
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="ค้นหา: รหัสโรค, ชื่อโรค, ชื่อย่อ..."
-					class="input input-bordered flex-1"
-					onkeydown={(e) => e.key === 'Enter' && handleSearch()}
-				/>
-				<button class="btn btn-primary" onclick={handleSearch}>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-					</svg>
-					ค้นหา
+			<AutocompleteSearch
+				bind:value={searchQuery}
+				placeholder="ค้นหา: รหัสโรค, ชื่อโรค, ชื่อย่อ..."
+				clientData={data.diseases}
+				clientSearchFn={(disease, query) => {
+					if (!disease || !query) return false;
+					const q = query.toLowerCase();
+					const code = disease.code || '';
+					const nameTh = disease.nameTh || '';
+					const nameEn = disease.nameEn || '';
+					const abbreviation = disease.abbreviation || '';
+					return (
+						code.toLowerCase().includes(q) ||
+						nameTh.toLowerCase().includes(q) ||
+						nameEn.toLowerCase().includes(q) ||
+						abbreviation.toLowerCase().includes(q)
+					);
+				}}
+				onSelect={handleDiseaseSelect}
+				displayFn={(disease) => disease.nameTh || ''}
+				detailFn={(disease) => {
+					const details = [];
+					details.push(`รหัส: ${disease.code}`);
+					if (disease.abbreviation) details.push(`ย่อ: ${disease.abbreviation}`);
+					if (disease.nameEn) details.push(`EN: ${disease.nameEn}`);
+					details.push(disease.isActive ? 'ใช้งาน' : 'ปิดการใช้งาน');
+					return details.join(' | ');
+				}}
+				size="sm"
+			/>
+			{#if searchQuery || selectedDiseaseForFilter}
+				<button class="btn btn-ghost btn-sm mt-2" onclick={clearSearch}>
+					ล้างการค้นหา
 				</button>
-				{#if searchQuery}
-					<button class="btn btn-ghost" onclick={() => { searchQuery = ''; handleSearch(); }}>
-						ล้าง
-					</button>
-				{/if}
-			</div>
+			{/if}
 		</div>
 	</div>
 
@@ -141,6 +175,10 @@
 		<div class="stat">
 			<div class="stat-title">ปิดการใช้งาน</div>
 			<div class="stat-value text-error">{data.diseases.filter(d => !d.isActive).length}</div>
+		</div>
+		<div class="stat">
+			<div class="stat-title">แสดงผล</div>
+			<div class="stat-value text-info">{filteredDiseases.length}</div>
 		</div>
 	</div>
 
@@ -167,7 +205,7 @@
 								</td>
 							</tr>
 						{:else}
-							{#each data.diseases as disease}
+							{#each filteredDiseases as disease}
 								<tr>
 									<td class="font-mono font-bold">{disease.code}</td>
 									<td>{disease.nameTh}</td>

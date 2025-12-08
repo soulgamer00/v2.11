@@ -9,7 +9,7 @@ export default defineConfig({
 			devOptions: {
 				enabled: true,
 				type: 'module',
-				navigateFallback: '/'
+				navigateFallback: undefined // Let SvelteKit handle routing
 			},
 			strategies: 'generateSW',
 			registerType: 'autoUpdate',
@@ -55,9 +55,8 @@ export default defineConfig({
 				// Cleanup outdated caches
 				cleanupOutdatedCaches: true,
 				
-				// Navigation Fallback: Serve app shell for offline navigation
-				navigateFallback: '/',
-				navigateFallbackDenylist: [/^\/api\//, /^\/_/],
+				// Navigation Fallback: Not needed for SvelteKit (SvelteKit handles routing via SSR)
+				// SvelteKit routes are handled server-side, so we don't need navigateFallback
 				
 				// Runtime Caching for external resources and API calls
 				runtimeCaching: [

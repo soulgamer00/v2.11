@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -21,11 +22,42 @@
 	let searchQuery = $state(data.search || '');
 	let selectedProvinceId = $state(data.selectedProvinceId);
 	let selectedAmphoeId = $state(data.selectedAmphoeId);
+	let selectedTambon: any = null;
+	
 	let filteredAmphoes = $derived(
 		selectedProvinceId 
 			? data.amphoes.filter(a => a.provinceId === selectedProvinceId)
 			: data.amphoes
 	);
+
+	// Filter tambons based on province, amphoe and search
+	let filteredTambons = $derived(
+		selectedTambon
+			? data.tambons.filter(t => t.id === selectedTambon.id)
+			: searchQuery || selectedProvinceId || selectedAmphoeId
+				? data.tambons.filter((t) => {
+						const matchesProvince = !selectedProvinceId || t.amphoe.provinceId === selectedProvinceId;
+						const matchesAmphoe = !selectedAmphoeId || t.amphoeId === selectedAmphoeId;
+						const matchesSearch = !searchQuery || 
+							t.nameTh.toLowerCase().includes(searchQuery.toLowerCase()) ||
+							t.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+							(t.postalCode && t.postalCode.includes(searchQuery));
+						return matchesProvince && matchesAmphoe && matchesSearch;
+				  })
+				: data.tambons
+	);
+
+	function handleTambonSelect(tambon: any) {
+		selectedTambon = tambon;
+		searchQuery = tambon.nameTh;
+		selectedProvinceId = tambon.amphoe.provinceId;
+		selectedAmphoeId = tambon.amphoeId;
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		selectedTambon = null;
+	}
 
 	function openAddModal() {
 		editMode = false;
@@ -82,27 +114,15 @@
 		}
 	}
 
-	function handleSearch() {
-		const params = new URLSearchParams();
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
-		if (selectedProvinceId) {
-			params.set('provinceId', selectedProvinceId.toString());
-		}
-		if (selectedAmphoeId) {
-			params.set('amphoeId', selectedAmphoeId.toString());
-		}
-		goto(`/dashboard/admin/tambons?${params.toString()}`);
-	}
-
 	function handleProvinceFilter() {
 		selectedAmphoeId = null;
-		handleSearch();
+		selectedTambon = null;
+		searchQuery = '';
 	}
 
 	function handleAmphoeFilter() {
-		handleSearch();
+		selectedTambon = null;
+		searchQuery = '';
 	}
 </script>
 
@@ -152,22 +172,41 @@
 						<option value={amphoe.id}>{amphoe.nameTh}</option>
 					{/each}
 				</select>
-				<input
-					type="text"
-					placeholder="ค้นหาตำบล (ชื่อ, รหัส, หรือรหัสไปรษณีย์)"
-					class="input input-bordered input-sm flex-1"
-					bind:value={searchQuery}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') {
-							handleSearch();
-						}
-					}}
-				/>
-				<button type="button" class="btn btn-sm btn-primary" onclick={handleSearch}>
-					<Icon name="search" class="w-4 h-4" />
-					ค้นหา
-				</button>
+				<div class="flex-1">
+					<AutocompleteSearch
+						bind:value={searchQuery}
+						placeholder="ค้นหาตำบล (ชื่อ, รหัส, หรือรหัสไปรษณีย์)"
+						clientData={data.tambons.filter(t => {
+							const matchesProvince = !selectedProvinceId || t.amphoe.provinceId === selectedProvinceId;
+							const matchesAmphoe = !selectedAmphoeId || t.amphoeId === selectedAmphoeId;
+							return matchesProvince && matchesAmphoe;
+						})}
+						clientSearchFn={(tambon, query) => {
+							if (!tambon || !query) return false;
+							const q = query.toLowerCase();
+							const nameTh = tambon.nameTh || '';
+							const code = tambon.code || '';
+							const postalCode = tambon.postalCode || '';
+							return nameTh.toLowerCase().includes(q) || code.toLowerCase().includes(q) || postalCode.includes(q);
+						}}
+						onSelect={handleTambonSelect}
+						displayFn={(tambon) => tambon.nameTh || ''}
+						detailFn={(tambon) => {
+							const details = [];
+							details.push(`รหัส: ${tambon.code}`);
+							details.push(`${tambon.amphoe.nameTh}, ${tambon.amphoe.province.nameTh}`);
+							if (tambon.postalCode) details.push(`ไปรษณีย์: ${tambon.postalCode}`);
+							return details.join(' | ');
+						}}
+						size="sm"
+					/>
+				</div>
 			</div>
+			{#if searchQuery || selectedTambon}
+				<button class="btn btn-ghost btn-sm mt-2" onclick={clearSearch}>
+					ล้างการค้นหา
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -196,7 +235,7 @@
 								</td>
 							</tr>
 						{:else}
-							{#each data.tambons as tambon}
+							{#each filteredTambons as tambon}
 								<tr>
 									<td class="font-mono text-xs">{tambon.code}</td>
 									<td class="font-medium">{tambon.nameTh}</td>

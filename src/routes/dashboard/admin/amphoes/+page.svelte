@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -20,6 +21,33 @@
 	let editMode = $state(false);
 	let searchQuery = $state(data.search || '');
 	let selectedProvinceId = $state(data.selectedProvinceId);
+	let selectedAmphoe: any = null;
+
+	// Filter amphoes based on province and search
+	let filteredAmphoes = $derived(
+		selectedAmphoe
+			? data.amphoes.filter(a => a.id === selectedAmphoe.id)
+			: searchQuery || selectedProvinceId
+				? data.amphoes.filter((a) => {
+						const matchesProvince = !selectedProvinceId || a.provinceId === selectedProvinceId;
+						const matchesSearch = !searchQuery || 
+							a.nameTh.toLowerCase().includes(searchQuery.toLowerCase()) ||
+							a.code.toLowerCase().includes(searchQuery.toLowerCase());
+						return matchesProvince && matchesSearch;
+				  })
+				: data.amphoes
+	);
+
+	function handleAmphoeSelect(amphoe: any) {
+		selectedAmphoe = amphoe;
+		searchQuery = amphoe.nameTh;
+		selectedProvinceId = amphoe.provinceId;
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		selectedAmphoe = null;
+	}
 
 	function openAddModal() {
 		editMode = false;
@@ -73,26 +101,9 @@
 		}
 	}
 
-	function handleSearch() {
-		const params = new URLSearchParams();
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
-		if (selectedProvinceId) {
-			params.set('provinceId', selectedProvinceId.toString());
-		}
-		goto(`/dashboard/admin/amphoes?${params.toString()}`);
-	}
-
 	function handleProvinceFilter() {
-		const params = new URLSearchParams();
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
-		if (selectedProvinceId) {
-			params.set('provinceId', selectedProvinceId.toString());
-		}
-		goto(`/dashboard/admin/amphoes?${params.toString()}`);
+		selectedAmphoe = null;
+		searchQuery = '';
 	}
 </script>
 
@@ -131,22 +142,36 @@
 						<option value={province.id}>{province.nameTh}</option>
 					{/each}
 				</select>
-				<input
-					type="text"
-					placeholder="ค้นหาอำเภอ (ชื่อหรือรหัส)"
-					class="input input-bordered input-sm flex-1"
-					bind:value={searchQuery}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') {
-							handleSearch();
-						}
-					}}
-				/>
-				<button type="button" class="btn btn-sm btn-primary" onclick={handleSearch}>
-					<Icon name="search" class="w-4 h-4" />
-					ค้นหา
-				</button>
+				<div class="flex-1">
+					<AutocompleteSearch
+						bind:value={searchQuery}
+						placeholder="ค้นหาอำเภอ (ชื่อหรือรหัส)"
+						clientData={data.amphoes.filter(a => !selectedProvinceId || a.provinceId === selectedProvinceId)}
+						clientSearchFn={(amphoe, query) => {
+							if (!amphoe || !query) return false;
+							const q = query.toLowerCase();
+							const nameTh = amphoe.nameTh || '';
+							const code = amphoe.code || '';
+							return nameTh.toLowerCase().includes(q) || code.toLowerCase().includes(q);
+						}}
+						onSelect={handleAmphoeSelect}
+						displayFn={(amphoe) => amphoe.nameTh || ''}
+						detailFn={(amphoe) => {
+							const details = [];
+							details.push(`รหัส: ${amphoe.code}`);
+							details.push(`จังหวัด: ${amphoe.province.nameTh}`);
+							details.push(`ตำบล: ${amphoe._count.tambons} แห่ง`);
+							return details.join(' | ');
+						}}
+						size="sm"
+					/>
+				</div>
 			</div>
+			{#if searchQuery || selectedAmphoe}
+				<button class="btn btn-ghost btn-sm mt-2" onclick={clearSearch}>
+					ล้างการค้นหา
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -174,7 +199,7 @@
 								</td>
 							</tr>
 						{:else}
-							{#each data.amphoes as amphoe}
+							{#each filteredAmphoes as amphoe}
 								<tr>
 									<td class="font-mono text-xs">{amphoe.code}</td>
 									<td class="font-medium">{amphoe.nameTh}</td>

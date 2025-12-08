@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -19,6 +20,29 @@
 	let showModal = $state(false);
 	let editMode = $state(false);
 	let searchQuery = $state(data.search || '');
+	let selectedProvince: any = null;
+
+	// Filter provinces based on search
+	let filteredProvinces = $derived(
+		selectedProvince
+			? data.provinces.filter(p => p.id === selectedProvince.id)
+			: searchQuery
+				? data.provinces.filter((p) =>
+						p.nameTh.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						p.code.toLowerCase().includes(searchQuery.toLowerCase())
+				  )
+				: data.provinces
+	);
+
+	function handleProvinceSelect(province: any) {
+		selectedProvince = province;
+		searchQuery = province.nameTh;
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		selectedProvince = null;
+	}
 
 	function openAddModal() {
 		editMode = false;
@@ -70,13 +94,6 @@
 		}
 	}
 
-	function handleSearch() {
-		const params = new URLSearchParams();
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
-		goto(`/dashboard/admin/provinces?${params.toString()}`);
-	}
 </script>
 
 <svelte:head>
@@ -103,23 +120,33 @@
 	<!-- Search -->
 	<div class="card bg-base-100 shadow">
 		<div class="card-body p-4">
-			<div class="flex flex-col sm:flex-row gap-2">
-				<input
-					type="text"
-					placeholder="ค้นหาจังหวัด (ชื่อหรือรหัส)"
-					class="input input-bordered input-sm flex-1"
-					bind:value={searchQuery}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') {
-							handleSearch();
-						}
-					}}
-				/>
-				<button type="button" class="btn btn-sm btn-primary" onclick={handleSearch}>
-					<Icon name="search" class="w-4 h-4" />
-					ค้นหา
+			<AutocompleteSearch
+				bind:value={searchQuery}
+				placeholder="ค้นหาจังหวัด (ชื่อหรือรหัส)"
+				clientData={data.provinces}
+				clientSearchFn={(province, query) => {
+					if (!province || !query) return false;
+					const q = query.toLowerCase();
+					const nameTh = province.nameTh || '';
+					const code = province.code || '';
+					return nameTh.toLowerCase().includes(q) || code.toLowerCase().includes(q);
+				}}
+				onSelect={handleProvinceSelect}
+				displayFn={(province) => province.nameTh || ''}
+				detailFn={(province) => {
+					const details = [];
+					details.push(`รหัส: ${province.code}`);
+					details.push(`อำเภอ: ${province._count.amphoes} แห่ง`);
+					details.push(`ผู้ป่วย: ${province._count.patients} คน`);
+					return details.join(' | ');
+				}}
+				size="sm"
+			/>
+			{#if searchQuery || selectedProvince}
+				<button class="btn btn-ghost btn-sm mt-2" onclick={clearSearch}>
+					ล้างการค้นหา
 				</button>
-			</div>
+			{/if}
 		</div>
 	</div>
 
@@ -146,7 +173,7 @@
 								</td>
 							</tr>
 						{:else}
-							{#each data.provinces as province}
+							{#each filteredProvinces as province}
 								<tr>
 									<td class="font-mono text-xs">{province.code}</td>
 									<td class="font-medium">{province.nameTh}</td>

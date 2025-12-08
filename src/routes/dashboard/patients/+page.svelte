@@ -13,18 +13,18 @@
 	let selectedIndex = $state(-1);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	// Autocomplete search
+	// Autocomplete search with dropdown
 	async function handleSearchInput(value: string) {
 		searchQuery = value;
-		showSuggestions = false;
 		selectedIndex = -1;
 
 		if (searchTimeout) {
 			clearTimeout(searchTimeout);
 		}
 
-		if (!value || value.length < 2) {
+		if (!value || value.length < 1) {
 			searchResults = [];
+			showSuggestions = false;
 			return;
 		}
 
@@ -33,12 +33,13 @@
 				const response = await fetch(`/api/patients/search?q=${encodeURIComponent(value)}`);
 				const results = await response.json();
 				searchResults = results;
-				showSuggestions = results.length > 0;
+				showSuggestions = results.length > 0 && value.length > 0;
 			} catch (error) {
 				console.error('Search error:', error);
 				searchResults = [];
+				showSuggestions = false;
 			}
-		}, 300);
+		}, 200);
 	}
 
 	function selectPatient(patient: any) {
@@ -46,6 +47,8 @@
 		showSuggestions = false;
 		selectedIndex = -1;
 		searchResults = [];
+		// Filter to show only selected patient
+		filteredPatients = data.patients.filter(p => p.id === patient.id);
 	}
 
 	function handleKeyDown(e: KeyboardEvent) {
@@ -73,11 +76,15 @@
 					searchResults.some((result) => result.id === p.id)
 			  )
 			: searchQuery
-				? data.patients.filter((p) =>
-						p.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-						p.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-						p.idCard?.includes(searchQuery)
-				  )
+				? data.patients.filter((p) => {
+						const query = searchQuery.toLowerCase();
+						return (
+							p.firstName.toLowerCase().includes(query) ||
+							p.lastName.toLowerCase().includes(query) ||
+							`${p.firstName} ${p.lastName}`.toLowerCase().includes(query) ||
+							p.idCard?.includes(searchQuery)
+						);
+				  })
 				: data.patients
 	);
 
@@ -139,7 +146,7 @@
 		</a>
 	</div>
 
-	<!-- Search with Autocomplete -->
+	<!-- Search with Autocomplete Dropdown -->
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
 			<div class="form-control search-container relative">
@@ -152,36 +159,70 @@
 						bind:value={searchQuery}
 						oninput={(e) => handleSearchInput(e.currentTarget.value)}
 						onkeydown={handleKeyDown}
+						onfocus={() => {
+							if (searchResults.length > 0 && searchQuery.length > 0) {
+								showSuggestions = true;
+							}
+						}}
 						placeholder="พิมพ์ชื่อ, นามสกุล, หรือเลขบัตรประชาชน..."
 						class="input input-bordered w-full pr-10"
 						autocomplete="off"
 					/>
 					<Icon name="search" size={20} class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40" />
+					{#if showSuggestions && searchResults.length > 0}
+						<div class="absolute z-50 w-full mt-1 bg-base-100 border-2 border-primary rounded-lg shadow-2xl max-h-80 overflow-y-auto dropdown-menu">
+							<div class="px-3 py-2 text-xs font-semibold text-base-content/60 border-b border-base-300 bg-base-200 sticky top-0">
+								พบ {searchResults.length} รายการที่ใกล้เคียง
+							</div>
+							{#each searchResults as result, index}
+								<button
+									type="button"
+									class="w-full text-left px-4 py-3 hover:bg-primary hover:text-primary-content transition-colors {index === selectedIndex
+										? 'bg-primary text-primary-content'
+										: 'bg-base-100'} border-b border-base-200 last:border-b-0"
+									onclick={() => selectPatient(result)}
+									onmouseenter={() => selectedIndex = index}
+								>
+									<div class="flex items-start justify-between gap-2">
+										<div class="flex-1">
+											<div class="font-semibold text-base">
+												{result.prefix || ''} {result.firstName} {result.lastName}
+											</div>
+											<div class="text-sm mt-1 space-y-0.5">
+												{#if result.idCard}
+													<div class="flex items-center gap-2">
+														<span class="text-base-content/60">เลขบัตร:</span>
+														<span class="font-mono">{result.idCard}</span>
+													</div>
+												{/if}
+												{#if result.phone}
+													<div class="flex items-center gap-2">
+														<span class="text-base-content/60">โทร:</span>
+														<span>{result.phone}</span>
+													</div>
+												{/if}
+											</div>
+										</div>
+										<div class="text-xs text-base-content/40">
+											คลิกเพื่อเลือก
+										</div>
+									</div>
+								</button>
+							{/each}
+							{#if searchResults.length === 0 && searchQuery.length >= 2}
+								<div class="px-4 py-3 text-center text-base-content/60">
+									ไม่พบข้อมูลที่ใกล้เคียง
+								</div>
+							{/if}
+						</div>
+					{/if}
 				</div>
-				{#if showSuggestions && searchResults.length > 0}
-					<div class="absolute z-50 w-full mt-1 bg-base-100 border border-base-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-						{#each searchResults as result, index}
-							<button
-								type="button"
-								class="w-full text-left px-4 py-2 hover:bg-base-200 {index === selectedIndex
-									? 'bg-base-200'
-									: ''}"
-								onclick={() => selectPatient(result)}
-							>
-								<div class="font-semibold">
-									{result.prefix || ''} {result.firstName} {result.lastName}
-								</div>
-								<div class="text-sm text-base-content/60">
-									{#if result.idCard}
-										เลขบัตร: {result.idCard}
-									{/if}
-									{#if result.phone}
-										{#if result.idCard} • {/if}โทร: {result.phone}
-									{/if}
-								</div>
-							</button>
-						{/each}
-					</div>
+				{#if searchQuery && !showSuggestions && searchQuery.length >= 2}
+					<label class="label">
+						<span class="label-text-alt text-base-content/60">
+							กำลังค้นหา... ({filteredPatients.length} รายการ)
+						</span>
+					</label>
 				{/if}
 			</div>
 		</div>

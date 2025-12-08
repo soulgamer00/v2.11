@@ -3,19 +3,97 @@
 	import { formatDateThai } from '$lib/utils/date';
 	import { goto } from '$app/navigation';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
 	let searchQuery = $state('');
-	let filteredCases = $derived(
-		data.cases.filter((c) =>
-			searchQuery
-				? c.patient.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				  c.patient.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				  c.disease.nameTh.toLowerCase().includes(searchQuery.toLowerCase())
-				: true
-		)
+	let selectedCase: any = null;
+	let showFilterModal = $state(false);
+	
+	// Filter states
+	let filterDiseaseName = $state<string | null>(null);
+	let filterHospitalName = $state<string | null>(null);
+	let filterCondition = $state<string | null>(null);
+	let filterGender = $state<string | null>(null);
+	let filterStartDate = $state<string>('');
+	let filterEndDate = $state<string>('');
+	
+	// Get unique values for filters
+	let uniqueDiseases = $derived(
+		Array.from(new Map(data.cases.map((c: any) => [c.disease.nameTh, c.disease.nameTh])).entries()).map(([name]) => name)
 	);
+	let uniqueHospitals = $derived(
+		Array.from(new Map(data.cases.map((c: any) => [c.hospital.name, c.hospital.name])).entries()).map(([name]) => name)
+	);
+	
+	let filteredCases = $derived(
+		data.cases.filter((c: any) => {
+			// Search filter
+			if (selectedCase) {
+				if (c.id !== selectedCase.id) return false;
+			} else if (searchQuery) {
+				const q = searchQuery.toLowerCase();
+				const matchesSearch = 
+					c.patient.firstName.toLowerCase().includes(q) ||
+					c.patient.lastName.toLowerCase().includes(q) ||
+					c.disease.nameTh.toLowerCase().includes(q);
+				if (!matchesSearch) return false;
+			}
+			
+			// Disease filter
+			if (filterDiseaseName !== null && c.disease.nameTh !== filterDiseaseName) return false;
+			
+			// Hospital filter
+			if (filterHospitalName !== null && c.hospital.name !== filterHospitalName) return false;
+			
+			// Condition filter
+			if (filterCondition !== null && c.condition !== filterCondition) return false;
+			
+			// Gender filter
+			if (filterGender !== null && c.patient.gender !== filterGender) return false;
+			
+			// Date range filter
+			if (filterStartDate && c.illnessDate) {
+				const illnessDate = new Date(c.illnessDate);
+				const startDate = new Date(filterStartDate);
+				if (illnessDate < startDate) return false;
+			}
+			if (filterEndDate && c.illnessDate) {
+				const illnessDate = new Date(c.illnessDate);
+				const endDate = new Date(filterEndDate);
+				endDate.setHours(23, 59, 59, 999);
+				if (illnessDate > endDate) return false;
+			}
+			
+			return true;
+		})
+	);
+	
+	function handleCaseSelect(caseItem: any) {
+		selectedCase = caseItem;
+		searchQuery = `${caseItem.patient.firstName} ${caseItem.patient.lastName} - ${caseItem.disease.nameTh}`;
+	}
+	
+	function clearFilters() {
+		filterDiseaseName = null;
+		filterHospitalName = null;
+		filterCondition = null;
+		filterGender = null;
+		filterStartDate = '';
+		filterEndDate = '';
+	}
+	
+	function getActiveFilterCount() {
+		let count = 0;
+		if (filterDiseaseName !== null) count++;
+		if (filterHospitalName !== null) count++;
+		if (filterCondition !== null) count++;
+		if (filterGender !== null) count++;
+		if (filterStartDate) count++;
+		if (filterEndDate) count++;
+		return count;
+	}
 
 	async function handleDelete(id: string) {
 		if (!confirm('คุณแน่ใจหรือไม่ที่จะลบรายงานเคสนี้? (ข้อมูลจะถูกย้ายไปยังถังขยะและสามารถกู้คืนได้)')) {
@@ -73,28 +151,63 @@
 	<div class="card bg-base-100 shadow">
 		<div class="card-body p-3 sm:p-4 md:p-6">
 			<div class="flex flex-col sm:flex-row gap-2 sm:gap-4">
-				<div class="form-control flex-1">
-					<input
-						type="text"
+				<div class="flex-1">
+					<AutocompleteSearch
 						bind:value={searchQuery}
 						placeholder="ค้นหา: ชื่อผู้ป่วย, โรค..."
-						class="input input-bordered input-sm sm:input-md"
+						clientData={data.cases}
+						clientSearchFn={(caseItem, query) => {
+							if (!caseItem || !query) return false;
+							const q = query.toLowerCase();
+							const firstName = caseItem.patient?.firstName || '';
+							const lastName = caseItem.patient?.lastName || '';
+							const diseaseName = caseItem.disease?.nameTh || '';
+							const diseaseCode = caseItem.disease?.code || '';
+							return (
+								firstName.toLowerCase().includes(q) ||
+								lastName.toLowerCase().includes(q) ||
+								diseaseName.toLowerCase().includes(q) ||
+								diseaseCode.toLowerCase().includes(q)
+							);
+						}}
+						onSelect={handleCaseSelect}
+						displayFn={(caseItem) => {
+							if (!caseItem) return '';
+							const patient = caseItem.patient || {};
+							const disease = caseItem.disease || {};
+							return `${patient.firstName || ''} ${patient.lastName || ''} - ${disease.nameTh || ''}`.trim();
+						}}
+						detailFn={(caseItem) => {
+							if (!caseItem) return '';
+							const disease = caseItem.disease || {};
+							const details = [];
+							if (disease.code) details.push(`รหัสโรค: ${disease.code}`);
+							if (caseItem.illnessDate) details.push(`วันที่ป่วย: ${formatDateThai(caseItem.illnessDate)}`);
+							return details.join(' | ');
+						}}
+						size="sm"
 					/>
 				</div>
-				<button class="btn btn-outline btn-sm sm:btn-md w-full sm:w-auto">
+				<button 
+					class="btn btn-outline btn-sm sm:btn-md w-full sm:w-auto relative"
+					onclick={() => showFilterModal = true}
+				>
 					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
 					</svg>
 					<span class="hidden sm:inline">ตัวกรอง</span>
 					<span class="sm:hidden">กรอง</span>
+					{#if getActiveFilterCount() > 0}
+						<span class="badge badge-primary badge-sm absolute -top-2 -right-2">{getActiveFilterCount()}</span>
+					{/if}
 				</button>
-				<button class="btn btn-outline btn-success btn-sm sm:btn-md w-full sm:w-auto">
+				<!--<button class="btn btn-outline btn-success btn-sm sm:btn-md w-full sm:w-auto">
 					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 					</svg>
 					<span class="hidden sm:inline">ส่งออก Excel</span>
 					<span class="sm:hidden">ส่งออก</span>
-				</button>
+				</button>-->
 			</div>
 		</div>
 	</div>
@@ -315,4 +428,118 @@
 		</div>
 	</div>
 </div>
+
+<!-- Filter Modal -->
+{#if showFilterModal}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-2xl">
+			<h3 class="font-bold text-lg mb-4">ตัวกรองข้อมูล</h3>
+			
+			<div class="space-y-4">
+				<!-- Disease Filter -->
+				<div class="form-control">
+					<label class="label" for="filter-disease">
+						<span class="label-text">โรค</span>
+					</label>
+					<select 
+						id="filter-disease"
+						class="select select-bordered select-sm"
+						bind:value={filterDiseaseName}
+					>
+						<option value={null}>ทุกโรค</option>
+						{#each uniqueDiseases as diseaseName}
+							<option value={diseaseName}>{diseaseName}</option>
+						{/each}
+					</select>
+				</div>
+				
+				<!-- Hospital Filter -->
+				<div class="form-control">
+					<label class="label" for="filter-hospital">
+						<span class="label-text">หน่วยงาน</span>
+					</label>
+					<select 
+						id="filter-hospital"
+						class="select select-bordered select-sm"
+						bind:value={filterHospitalName}
+					>
+						<option value={null}>ทุกหน่วยงาน</option>
+						{#each uniqueHospitals as hospitalName}
+							<option value={hospitalName}>{hospitalName}</option>
+						{/each}
+					</select>
+				</div>
+				
+				<!-- Condition Filter -->
+				<div class="form-control">
+					<label class="label" for="filter-condition">
+						<span class="label-text">สถานะ</span>
+					</label>
+					<select 
+						id="filter-condition"
+						class="select select-bordered select-sm"
+						bind:value={filterCondition}
+					>
+						<option value={null}>ทุกสถานะ</option>
+						<option value="UNDER_TREATMENT">รักษาอยู่</option>
+						<option value="RECOVERED">หาย</option>
+						<option value="DIED">เสียชีวิต</option>
+					</select>
+				</div>
+				
+				<!-- Gender Filter -->
+				<div class="form-control">
+					<label class="label" for="filter-gender">
+						<span class="label-text">เพศ</span>
+					</label>
+					<select 
+						id="filter-gender"
+						class="select select-bordered select-sm"
+						bind:value={filterGender}
+					>
+						<option value={null}>ทุกเพศ</option>
+						<option value="MALE">ชาย</option>
+						<option value="FEMALE">หญิง</option>
+					</select>
+				</div>
+				
+				<!-- Date Range -->
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					<div class="form-control">
+						<label class="label" for="filter-start-date">
+							<span class="label-text">วันที่เริ่มต้น</span>
+						</label>
+						<input 
+							id="filter-start-date"
+							type="date" 
+							class="input input-bordered input-sm"
+							bind:value={filterStartDate}
+						/>
+					</div>
+					<div class="form-control">
+						<label class="label" for="filter-end-date">
+							<span class="label-text">วันที่สิ้นสุด</span>
+						</label>
+						<input 
+							id="filter-end-date"
+							type="date" 
+							class="input input-bordered input-sm"
+							bind:value={filterEndDate}
+						/>
+					</div>
+				</div>
+			</div>
+			
+			<div class="modal-action">
+				<button class="btn btn-ghost" onclick={clearFilters}>
+					ล้างทั้งหมด
+				</button>
+				<button class="btn btn-primary" onclick={() => showFilterModal = false}>
+					ปิด
+				</button>
+			</div>
+		</div>
+		<div class="modal-backdrop" role="button" tabindex="0" onclick={() => showFilterModal = false} onkeydown={(e) => e.key === 'Enter' && (showFilterModal = false)}></div>
+	</div>
+{/if}
 

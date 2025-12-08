@@ -2,6 +2,7 @@
 	import { superForm } from 'sveltekit-superforms';
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -18,6 +19,30 @@
 	let showModal = $state(false);
 	let editMode = $state(false);
 	let searchQuery = $state(data.search || '');
+	let selectedUser: any = null;
+
+	// Filter users based on search
+	let filteredUsers = $derived(
+		selectedUser
+			? data.users.filter(u => u.id === selectedUser.id)
+			: searchQuery
+				? data.users.filter((u) =>
+						u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+						u.hospital?.name.toLowerCase().includes(searchQuery.toLowerCase())
+				  )
+				: data.users
+	);
+
+	function handleUserSelect(user: any) {
+		selectedUser = user;
+		searchQuery = user.username;
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		selectedUser = null;
+	}
 
 	function openAddModal() {
 		editMode = false;
@@ -69,11 +94,6 @@
 		}
 	}
 
-	function handleSearch() {
-		const params = new URLSearchParams();
-		if (searchQuery) params.set('search', searchQuery);
-		goto(`/dashboard/users?${params.toString()}`);
-	}
 </script>
 
 <svelte:head>
@@ -96,16 +116,38 @@
 
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
-			<div class="flex gap-2">
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="ค้นหา: ชื่อผู้ใช้, ชื่อ-นามสกุล..."
-					class="input input-bordered flex-1"
-					onkeydown={(e) => e.key === 'Enter' && handleSearch()}
-				/>
-				<button class="btn btn-primary" onclick={handleSearch}>ค้นหา</button>
-			</div>
+			<AutocompleteSearch
+				bind:value={searchQuery}
+				placeholder="ค้นหา: ชื่อผู้ใช้, ชื่อ-นามสกุล..."
+				clientData={data.users}
+				clientSearchFn={(user, query) => {
+					if (!user || !query) return false;
+					const q = query.toLowerCase();
+					const username = user.username || '';
+					const fullName = user.fullName || '';
+					const hospitalName = user.hospital?.name || '';
+					return (
+						username.toLowerCase().includes(q) ||
+						fullName.toLowerCase().includes(q) ||
+						hospitalName.toLowerCase().includes(q)
+					);
+				}}
+				onSelect={handleUserSelect}
+				displayFn={(user) => user.fullName || user.username || ''}
+				detailFn={(user) => {
+					const details = [];
+					details.push(`ชื่อผู้ใช้: ${user.username}`);
+					if (user.hospital?.name) details.push(`หน่วยงาน: ${user.hospital.name}`);
+					details.push(`บทบาท: ${user.role}`);
+					return details.join(' | ');
+				}}
+				size="sm"
+			/>
+			{#if searchQuery || selectedUser}
+				<button class="btn btn-ghost btn-sm mt-2" onclick={clearSearch}>
+					ล้างการค้นหา
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -124,10 +166,10 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#if data.users.length === 0}
+						{#if filteredUsers.length === 0}
 							<tr><td colspan="6" class="text-center py-8 text-base-content/60">ไม่พบข้อมูล</td></tr>
 						{:else}
-							{#each data.users as user}
+							{#each filteredUsers as user}
 								<tr>
 									<td class="font-mono font-bold">{user.username}</td>
 									<td>{user.fullName}</td>

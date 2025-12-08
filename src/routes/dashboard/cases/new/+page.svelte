@@ -7,6 +7,7 @@
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -31,7 +32,6 @@
 	let activeTab = $state(1); // Tab 1-5
 	let showModal = $state(false);
 	let searchIdCard = $state('');
-	let searchResults = $state<any[]>([]);
 	let selectedPatient = $state<any>(null);
 	let amphoes = $state<any[]>([]);
 	let tambons = $state<any[]>([]);
@@ -197,16 +197,6 @@
 		}
 	});
 
-	// Search patient by ID card or name
-	async function searchPatient() {
-		if (!searchIdCard) return;
-
-		const response = await fetch(`/api/patients/search?q=${encodeURIComponent(searchIdCard)}`);
-		if (response.ok) {
-			searchResults = await response.json();
-		}
-	}
-
 	// Select patient from search results
 	function selectPatient(patient: any) {
 		selectedPatient = patient;
@@ -236,7 +226,7 @@
 		}
 
 		// Stay on Patient Info tab after selecting
-		searchResults = [];
+		searchIdCard = '';
 	}
 
 	// Load amphoes when province changes
@@ -443,63 +433,30 @@
 	<!-- Patient Search Section (Compact) -->
 	<div class="mb-4">
 		<div class="flex gap-2 items-end">
-			<div class="form-control flex-1">
-				<label class="label py-1">
-					<span class="label-text text-xs">ค้นหาผู้ป่วย</span>
-				</label>
-				<div class="join">
-					<input
-						type="text"
-						id="searchIdCard"
-						bind:value={searchIdCard}
-						class="input input-bordered input-sm join-item flex-1"
-						placeholder="เลขบัตรประชาชน หรือ ชื่อ-นามสกุล"
-						onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), searchPatient())}
-					/>
-					<button type="button" class="btn btn-primary btn-sm join-item" onclick={searchPatient}>
-						ค้นหา
-					</button>
-				</div>
+			<div class="flex-1">
+				<AutocompleteSearch
+					bind:value={searchIdCard}
+					label="ค้นหาผู้ป่วย"
+					placeholder="เลขบัตรประชาชน หรือ ชื่อ-นามสกุล"
+					searchUrl="/api/patients/search"
+					onSelect={(patient) => {
+						selectPatient(patient);
+						openModal();
+					}}
+					displayFn={(patient) => `${patient.prefix || ''} ${patient.firstName} ${patient.lastName}`.trim()}
+					detailFn={(patient) => {
+						let details = [];
+						if (patient.idCard) details.push(`เลขบัตร: ${patient.idCard}`);
+						if (patient.phone) details.push(`โทร: ${patient.phone}`);
+						return details.join(' • ');
+					}}
+					size="sm"
+				/>
 			</div>
-			<button type="button" class="btn btn-outline btn-sm" onclick={() => { searchResults = []; searchIdCard = ''; openModal(); }}>
+			<button type="button" class="btn btn-outline btn-sm" onclick={() => { searchIdCard = ''; openModal(); }}>
 				เพิ่มผู้ป่วยใหม่
 			</button>
 		</div>
-
-		{#if searchResults.length > 0}
-			<div class="mt-2 card bg-base-200 shadow-sm">
-				<div class="card-body p-3">
-					<div class="overflow-x-auto">
-						<table class="table table-xs">
-							<thead>
-								<tr>
-									<th>เลขบัตรประชาชน</th>
-									<th>ชื่อ-นามสกุล</th>
-									<th>เพศ</th>
-									<th>วันเกิด</th>
-									<th></th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each searchResults as patient}
-									<tr>
-										<td>{patient.idCard || '-'}</td>
-										<td>{patient.prefix} {patient.firstName} {patient.lastName}</td>
-										<td>{patient.gender === 'MALE' ? 'ชาย' : 'หญิง'}</td>
-										<td>{patient.birthDate ? new Date(patient.birthDate).toLocaleDateString('th-TH') : '-'}</td>
-										<td>
-											<button type="button" class="btn btn-xs btn-primary" onclick={() => { selectPatient(patient); openModal(); }}>
-												เลือก
-											</button>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				</div>
-			</div>
-		{/if}
 	</div>
 
 	<!-- Open Form Button -->

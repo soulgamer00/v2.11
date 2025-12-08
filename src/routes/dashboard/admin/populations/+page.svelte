@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 	import { browser } from '$app/environment';
 	import type { PageData, ActionData } from './$types';
 
@@ -269,21 +270,21 @@
 	<!-- Search -->
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
-			<div class="form-control">
-				<label class="label">
-					<span class="label-text font-semibold">ค้นหาหน่วยงาน</span>
-				</label>
-				<div class="relative">
-					<input
-						type="text"
-						bind:value={searchQuery}
-						placeholder="พิมพ์ชื่อหน่วยงานหรือรหัส 9 หลัก..."
-						class="input input-bordered w-full pr-10"
-						autocomplete="off"
-					/>
-					<Icon name="search" size={20} class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-				</div>
-			</div>
+			<AutocompleteSearch
+				bind:value={searchQuery}
+				label="ค้นหาหน่วยงาน"
+				placeholder="พิมพ์ชื่อหน่วยงานหรือรหัส 9 หลัก..."
+				clientData={hospitals}
+				clientSearchFn={(hospital, query) => {
+					const q = query.toLowerCase();
+					return (
+						hospital.name.toLowerCase().includes(q) ||
+						hospital.code9?.includes(query)
+					);
+				}}
+				displayFn={(hospital) => hospital.name}
+				detailFn={(hospital) => hospital.code9 ? `รหัส: ${hospital.code9}` : ''}
+			/>
 		</div>
 	</div>
 

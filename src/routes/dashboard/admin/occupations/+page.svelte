@@ -2,6 +2,7 @@
 	import { superForm } from 'sveltekit-superforms';
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
+	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -18,6 +19,28 @@
 	let showModal = $state(false);
 	let editMode = $state(false);
 	let searchQuery = $state(data.search || '');
+	let selectedOccupation: any = null;
+
+	// Filter occupations based on search
+	let filteredOccupations = $derived(
+		selectedOccupation
+			? data.occupations.filter(o => o.id === selectedOccupation.id)
+			: searchQuery
+				? data.occupations.filter((o) =>
+						o.value.toLowerCase().includes(searchQuery.toLowerCase())
+				  )
+				: data.occupations
+	);
+
+	function handleOccupationSelect(occupation: any) {
+		selectedOccupation = occupation;
+		searchQuery = occupation.value;
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		selectedOccupation = null;
+	}
 
 	function openAddModal() {
 		editMode = false;
@@ -62,13 +85,6 @@
 		}
 	}
 
-	function handleSearch() {
-		const params = new URLSearchParams();
-		if (searchQuery) {
-			params.set('search', searchQuery);
-		}
-		goto(`/dashboard/admin/occupations?${params.toString()}`);
-	}
 </script>
 
 <svelte:head>
@@ -93,26 +109,27 @@
 	<!-- Search Bar -->
 	<div class="card bg-base-100 shadow">
 		<div class="card-body">
-			<div class="flex gap-2">
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="ค้นหาอาชีพ..."
-					class="input input-bordered flex-1"
-					onkeydown={(e) => e.key === 'Enter' && handleSearch()}
-				/>
-				<button class="btn btn-primary" onclick={handleSearch}>
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-					</svg>
-					ค้นหา
+			<AutocompleteSearch
+				bind:value={searchQuery}
+				placeholder="ค้นหาอาชีพ..."
+				clientData={data.occupations}
+				clientSearchFn={(occupation, query) => {
+					if (!occupation || !query) return false;
+					const value = occupation.value || '';
+					return value.toLowerCase().includes(query.toLowerCase());
+				}}
+				onSelect={handleOccupationSelect}
+				displayFn={(occupation) => occupation.value || ''}
+				detailFn={(occupation) => {
+					return occupation.usageCount > 0 ? `ใช้งาน ${occupation.usageCount} รายการ` : 'ไม่มีการใช้งาน';
+				}}
+				size="sm"
+			/>
+			{#if searchQuery || selectedOccupation}
+				<button class="btn btn-ghost btn-sm mt-2" onclick={clearSearch}>
+					ล้างการค้นหา
 				</button>
-				{#if searchQuery}
-					<button class="btn btn-ghost" onclick={() => { searchQuery = ''; handleSearch(); }}>
-						ล้าง
-					</button>
-				{/if}
-			</div>
+			{/if}
 		</div>
 	</div>
 
@@ -127,6 +144,10 @@
 			<div class="stat-value text-success">
 				{data.occupations.filter((occ) => occ.usageCount > 0).length}
 			</div>
+		</div>
+		<div class="stat">
+			<div class="stat-title">แสดงผล</div>
+			<div class="stat-value text-info">{filteredOccupations.length}</div>
 		</div>
 	</div>
 
@@ -151,7 +172,7 @@
 								</td>
 							</tr>
 						{:else}
-							{#each data.occupations as occupation, index}
+							{#each filteredOccupations as occupation, index}
 								<tr>
 									<td>{index + 1}</td>
 									<td class="font-semibold">{occupation.value}</td>
