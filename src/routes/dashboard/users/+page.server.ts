@@ -48,9 +48,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	try {
 		// Use include to get all fields including permissions if it exists
 		// If permissions field doesn't exist, Prisma will just not include it
+		// Filter out soft-deleted users
 		[users, hospitals] = await Promise.all([
 			prisma.user.findMany({
-				where,
+				where: {
+					...where,
+					deletedAt: null // Only show non-deleted users
+				},
 				include: {
 					hospital: {
 						select: {
@@ -303,15 +307,34 @@ export const actions: Actions = {
 		if (id === currentUser.id) return fail(400, { message: 'ไม่สามารถลบบัญชีตัวเองได้' });
 
 		try {
-			const deletedUser = await prisma.user.findUnique({ where: { id } });
+			const userToDelete = await prisma.user.findUnique({ 
+				where: { id },
+				select: {
+					id: true,
+					username: true,
+					deletedAt: true
+				}
+			});
 			
-			if (!deletedUser) {
+			if (!userToDelete) {
 				return fail(404, { message: 'ไม่พบผู้ใช้งานที่ต้องการลบ' });
 			}
 
-			await prisma.user.delete({ where: { id } });
+			// Check if already soft-deleted
+			if (userToDelete.deletedAt) {
+				return fail(400, { message: 'ผู้ใช้งานนี้ถูกลบไปแล้ว' });
+			}
 
-			await logAudit(currentUser.id, AuditActions.DELETE, `${AuditResources.USER}:${deletedUser.username}`);
+			// Soft delete: Update user instead of deleting
+			await prisma.user.update({
+				where: { id },
+				data: {
+					isActive: false,
+					deletedAt: new Date()
+				}
+			});
+
+			await logAudit(currentUser.id, AuditActions.DELETE, `${AuditResources.USER}:${userToDelete.username}`);
 			
 			// Return success response
 			return { success: true, message: 'ลบผู้ใช้งานสำเร็จ' };
@@ -319,26 +342,8 @@ export const actions: Actions = {
 			console.error('Delete user error:', error);
 			
 			// Handle specific Prisma errors
-			if (error?.code === 'P2003') {
-				return fail(400, { 
-					message: 'ไม่สามารถลบผู้ใช้งานได้ เนื่องจากมีข้อมูลที่เกี่ยวข้องอยู่ (เช่น Session, Notification, หรือ User ที่สร้างโดย user นี้)' 
-				});
-			}
-			
 			if (error?.code === 'P2025') {
 				return fail(404, { message: 'ไม่พบผู้ใช้งานที่ต้องการลบ (อาจถูกลบไปแล้ว)' });
-			}
-			
-			// Handle foreign key constraint errors (PostgreSQL)
-			if (error?.message?.includes('Foreign key constraint') || 
-			    error?.message?.includes('violates foreign key constraint')) {
-				return fail(400, { 
-					message: 'ไม่สามารถลบผู้ใช้งานได้ เนื่องจากมีข้อมูลที่เกี่ยวข้องอยู่:\n' +
-					         '- Session ที่ยังใช้งานอยู่\n' +
-					         '- Notification ที่เกี่ยวข้อง\n' +
-					         '- User ที่ถูกสร้างโดย user นี้\n\n' +
-					         'กรุณาลบหรือย้ายข้อมูลที่เกี่ยวข้องก่อน'
-				});
 			}
 			
 			// Generic error with detailed message

@@ -68,6 +68,11 @@ const protectedRoutesHandle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
+	// Handle favicon.ico specifically (common request that shouldn't hit page routes)
+	if (path === '/favicon.ico') {
+		return resolve(event);
+	}
+
 	// Public routes (exact matches or specific paths)
 	const isPublicRoute = 
 		path === '/' || 

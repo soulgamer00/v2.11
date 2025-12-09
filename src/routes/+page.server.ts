@@ -2,16 +2,17 @@ import { prisma } from '$lib/server/db';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	const diseaseId = parseInt(url.searchParams.get('diseaseId') || '0');
-	
-	// Base where clause for active cases
-	const whereClause = {
-		deletedAt: null,
-		...(diseaseId ? { diseaseId } : {})
-	};
+	try {
+		const diseaseId = parseInt(url.searchParams.get('diseaseId') || '0');
+		
+		// Base where clause for active cases
+		const whereClause = {
+			deletedAt: null,
+			...(diseaseId ? { diseaseId } : {})
+		};
 
-	const currentYear = new Date().getFullYear();
-	const startOfYear = new Date(currentYear, 0, 1);
+		const currentYear = new Date().getFullYear();
+		const startOfYear = new Date(currentYear, 0, 1);
 
 	// Use transaction to optimize database queries
 	const [
@@ -33,13 +34,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		prisma.caseReport.count({ where: { ...whereClause, condition: 'DIED' } }),
 		prisma.hospital.count(),
 		// Fetch only current year data for charts, limited to prevent huge payloads
+		// Filter by createdAt to ensure we get current year data (illnessDate might be null)
 		prisma.caseReport.findMany({
 			where: {
 				...whereClause,
-				OR: [
-					{ illnessDate: { gte: startOfYear } },
-					{ createdAt: { gte: startOfYear } }
-				]
+				createdAt: { gte: startOfYear }
 			},
 			select: {
 				illnessDate: true,
@@ -73,20 +72,40 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		else ageDistribution[6]++;
 	});
 
-	return {
-		user: locals.user,
-		diseases,
-		selectedDiseaseId: diseaseId,
-		stats: {
-			totalCases,
-			recovered,
-			deaths,
-			hospitalCount,
-			mortalityRate: totalCases > 0 ? ((deaths / totalCases) * 100).toFixed(2) : '0.00'
-		},
-		charts: {
-			monthlyTrend,
-			ageDistribution
-		}
-	};
+		return {
+			user: locals.user,
+			diseases,
+			selectedDiseaseId: diseaseId,
+			stats: {
+				totalCases,
+				recovered,
+				deaths,
+				hospitalCount,
+				mortalityRate: totalCases > 0 ? ((deaths / totalCases) * 100).toFixed(2) : '0.00'
+			},
+			charts: {
+				monthlyTrend,
+				ageDistribution
+			}
+		};
+	} catch (error) {
+		console.error('Error loading page data:', error);
+		// Return minimal data to prevent complete failure
+		return {
+			user: locals.user,
+			diseases: [],
+			selectedDiseaseId: 0,
+			stats: {
+				totalCases: 0,
+				recovered: 0,
+				deaths: 0,
+				hospitalCount: 0,
+				mortalityRate: '0.00'
+			},
+			charts: {
+				monthlyTrend: Array(12).fill(0),
+				ageDistribution: [0, 0, 0, 0, 0, 0, 0]
+			}
+		};
+	}
 };

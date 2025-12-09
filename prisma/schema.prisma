@@ -16,6 +16,7 @@ model User {
   role         Role     @default(USER)
   isActive     Boolean  @default(true)
   permissions  String[] @default([]) // Feature flags / permissions array
+  deletedAt    DateTime? // Soft delete
 
   // Scoped Access:
   // If USER: linked to ONE hospital (Read-only for that hospital).
@@ -36,6 +37,8 @@ model User {
   @@index([role])
   @@index([isActive])
   @@index([role, isActive])
+  @@index([deletedAt])
+  @@index([isActive, deletedAt])
 }
 
 enum Role {

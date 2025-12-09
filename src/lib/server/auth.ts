@@ -55,11 +55,14 @@ export async function validateCredentials(
 			role: true,
 			hospitalId: true,
 			passwordHash: true,
-			isActive: true
+			isActive: true,
+			deletedAt: true,
+			permissions: true
 		}
 	});
 
-	if (!user || !user.isActive) {
+	// Reject soft-deleted or inactive users
+	if (!user || !user.isActive || user.deletedAt) {
 		return null;
 	}
 
@@ -95,13 +98,15 @@ export async function getUserFromSession(event: RequestEvent): Promise<SessionUs
 					role: true,
 					hospitalId: true,
 					isActive: true,
+					deletedAt: true,
 					permissions: true
 				}
 			}
 		}
 	});
 
-	if (!session || session.expiresAt < new Date() || !session.user.isActive) {
+	// Reject expired sessions, inactive users, or soft-deleted users
+	if (!session || session.expiresAt < new Date() || !session.user.isActive || session.user.deletedAt) {
 		// Clean up expired session
 		if (session) {
 			await prisma.session.delete({ where: { id: sessionId } });
