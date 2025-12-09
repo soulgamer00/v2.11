@@ -14,6 +14,10 @@
     // สถานะสำหรับการ Print
     let isPrinting = $state(false);
     
+    // สถานะสำหรับ Preview Modal
+    let showPreviewModal = $state(false);
+    let previewUrl = $state<string>('');
+    
     // สถานะสำหรับเลือกหน่วยงานและปี
     let selectedHospitalId = $state<string>(data.selectedHospitalId?.toString() || '');
     let selectedYear = $state<string>(data.selectedYear?.toString() || new Date().getFullYear().toString());
@@ -149,7 +153,7 @@
     }
 
     // 🖨️ ฟังก์ชันจัดการการพิมพ์ PDF
-    async function handlePrint() {
+    async function handlePrint(mode: 'save' | 'preview' = 'save') {
         if (isPrinting) return; // ป้องกันการกดซ้ำ
         isPrinting = true;
         try {
@@ -167,17 +171,51 @@
             }
 
             // ส่งข้อมูลทั้งหมดไปให้ฟังก์ชันเจน PDF รวมถึงชื่อหน่วยงานที่เลือก
-            await generateReportPDF({
+            const result = await generateReportPDF({
                 ...data,
                 selectedHospitalName: data.selectedHospitalName || null,
                 selectedYear: data.selectedYear,
                 population: data.population
-            }, chartImages); 
+            }, chartImages, mode);
+            
+            // If preview mode, show modal with PDF
+            if (mode === 'preview' && result) {
+                // Clean up previous URL if exists
+                if (previewUrl) {
+                    URL.revokeObjectURL(previewUrl);
+                }
+                previewUrl = result;
+                showPreviewModal = true;
+            }
         } catch (error) {
             console.error('PDF Generation Failed:', error);
             alert('ไม่สามารถสร้าง PDF ได้ กรุณาลองใหม่อีกครั้ง');
         } finally {
             isPrinting = false;
+        }
+    }
+    
+    // ฟังก์ชันปิด Preview Modal และลบ URL
+    function closePreviewModal() {
+        showPreviewModal = false;
+        if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            previewUrl = '';
+        }
+    }
+    
+    // ฟังก์ชันดาวน์โหลด PDF จาก Preview
+    async function confirmDownload() {
+        if (!previewUrl) return;
+        
+        try {
+            // Generate PDF again in save mode
+            await handlePrint('save');
+            // Close modal after download starts
+            closePreviewModal();
+        } catch (error) {
+            console.error('Download Failed:', error);
+            alert('ไม่สามารถดาวน์โหลด PDF ได้ กรุณาลองใหม่อีกครั้ง');
         }
     }
 </script>
@@ -219,15 +257,28 @@
                 </select>
             {/if}
             
-            <button class="btn btn-primary btn-sm sm:btn-md" onclick={handlePrint} disabled={isPrinting || isLoading}>
+            <button class="btn btn-outline btn-sm sm:btn-md" onclick={() => handlePrint('preview')} disabled={isPrinting || isLoading}>
+                {#if isPrinting}
+                    <span class="loading loading-spinner"></span> กำลังสร้าง PDF...
+                {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <span class="hidden sm:inline">Preview</span>
+                    <span class="sm:hidden">Preview</span>
+                {/if}
+            </button>
+            
+            <button class="btn btn-primary btn-sm sm:btn-md" onclick={() => handlePrint('save')} disabled={isPrinting || isLoading}>
                 {#if isPrinting}
                     <span class="loading loading-spinner"></span> กำลังสร้าง PDF...
                 {:else}
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
-                    <span class="hidden sm:inline">🖨️ Print PDF</span>
-                    <span class="sm:hidden">PDF</span>
+                    <span class="hidden sm:inline">Download PDF</span>
+                    <span class="sm:hidden">Download</span>
                 {/if}
             </button>
         </div>
@@ -358,3 +409,36 @@
         </div>
     </div>
 </div>
+
+<!-- PDF Preview Modal -->
+{#if showPreviewModal}
+    <div class="modal modal-open">
+        <div class="modal-box max-w-7xl w-full h-[90vh] flex flex-col">
+            <h3 class="font-bold text-lg mb-4">PDF Preview - รายงานสถานการณ์โรคติดต่อ</h3>
+            <div class="flex-1 border border-base-300 rounded-lg overflow-hidden">
+                <iframe 
+                    src={previewUrl} 
+                    class="w-full h-full"
+                    title="PDF Preview"
+                ></iframe>
+            </div>
+            <div class="modal-action mt-4">
+                <button class="btn btn-outline" onclick={closePreviewModal}>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Close
+                </button>
+                <button class="btn btn-primary" onclick={confirmDownload}>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Confirm Download
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop" onclick={closePreviewModal}>
+            <button>close</button>
+        </form>
+    </div>
+{/if}

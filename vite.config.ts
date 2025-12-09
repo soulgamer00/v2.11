@@ -31,7 +31,8 @@ export default defineConfig({
 					{
 						src: '/favicon.png',
 						sizes: '192x192',
-						type: 'image/png'
+						type: 'image/png',
+						purpose: 'any maskable'
 					},
 					{
 						src: '/favicon.png',
@@ -55,8 +56,9 @@ export default defineConfig({
 				// Cleanup outdated caches
 				cleanupOutdatedCaches: true,
 				
-				// Navigation Fallback: Not needed for SvelteKit (SvelteKit handles routing via SSR)
-				// SvelteKit routes are handled server-side, so we don't need navigateFallback
+				// Navigation Fallback: Required for PWA/SPA behavior when offline
+				// This ensures the App Shell loads when the user is offline
+				navigateFallback: '/',
 				
 				// Runtime Caching for external resources and API calls
 				runtimeCaching: [
@@ -101,6 +103,21 @@ export default defineConfig({
 								statuses: [0, 200]
 							},
 							networkTimeoutSeconds: 10
+						}
+					},
+					{
+						urlPattern: /.*__data\.json$/i,
+						handler: 'NetworkFirst',
+						options: {
+							cacheName: 'sveltekit-data-cache',
+							expiration: {
+								maxEntries: 100,
+								maxAgeSeconds: 60 * 60 * 24 // 1 day
+							},
+							cacheableResponse: {
+								statuses: [0, 200]
+							},
+							networkTimeoutSeconds: 3
 						}
 					}
 				]

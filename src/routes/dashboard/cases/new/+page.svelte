@@ -22,6 +22,22 @@
 				return;
 			}
 		},
+		onError: async ({ result, message }) => {
+			// Check if error is network-related or if user wants to save offline
+			if (browser) {
+				const isNetworkError = 
+					message?.includes('fetch') || 
+					message?.includes('network') || 
+					message?.includes('Failed to fetch') ||
+					result?.type === 'failure' ||
+					!navigator.onLine;
+				
+				if (isNetworkError || confirm('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ ต้องการบันทึกข้อมูลแบบออฟไลน์หรือไม่?')) {
+					await saveOffline();
+					closeModal();
+				}
+			}
+		},
 		onResult: ({ result }) => {
 			if (result.type === 'success') {
 				closeModal();
@@ -186,19 +202,82 @@
 
 	// Load cached data on mount if offline
 	onMount(async () => {
-		if (browser && !$isOnline) {
-			// Load from IndexedDB
-			cachedDiseases = await db.diseases.where('isActive').equals(true).toArray();
-			cachedHospitals = await db.hospitals.toArray();
-			cachedProvinces = await db.provinces.toArray();
+		if (!browser) return;
+		
+		// Always load from IndexedDB as fallback, regardless of online status
+		// This ensures dropdowns work even if network drops after page loads
+		try {
+			// Try to load from IndexedDB with individual error handling
+			let diseases: any[] = [];
+			let hospitals: any[] = [];
+			let provinces: any[] = [];
+			let allMasterData: any[] = [];
+
+			try {
+				// Use filter instead of where().equals() to avoid IndexedDB key errors with boolean
+				const allDiseases = await db.diseases.toArray();
+				diseases = allDiseases.filter(d => d.isActive === true);
+			} catch (error) {
+				console.error('Error loading diseases from IndexedDB:', error);
+				// Fallback to server data if available
+				diseases = data.diseases || [];
+			}
+
+			try {
+				hospitals = await db.hospitals.toArray();
+			} catch (error) {
+				console.error('Error loading hospitals from IndexedDB:', error);
+				hospitals = data.hospitals || [];
+			}
+
+			try {
+				provinces = await db.provinces.toArray();
+			} catch (error) {
+				console.error('Error loading provinces from IndexedDB:', error);
+				provinces = data.provinces || [];
+			}
+
+			try {
+				allMasterData = await db.masterData.toArray();
+			} catch (error) {
+				console.error('Error loading masterData from IndexedDB:', error);
+				allMasterData = [];
+			}
 			
-			const allMasterData = await db.masterData.toArray();
-			cachedMasterData = {
-				PREFIX: allMasterData.filter((m) => m.category === 'PREFIX'),
-				OCCUPATION: allMasterData.filter((m) => m.category === 'OCCUPATION'),
-				NATIONALITY: allMasterData.filter((m) => m.category === 'NATIONALITY'),
-				MARITAL_STATUS: allMasterData.filter((m) => m.category === 'MARITAL_STATUS')
-			};
+			// Only use cached data if we have it and we're offline, or if server data is missing
+			if (!$isOnline || !data.diseases?.length) {
+				cachedDiseases = diseases;
+			}
+			if (!$isOnline || !data.hospitals?.length) {
+				cachedHospitals = hospitals;
+			}
+			if (!$isOnline || !data.provinces?.length) {
+				cachedProvinces = provinces;
+			}
+			
+			// Always populate master data from cache as fallback
+			if (allMasterData.length > 0) {
+				cachedMasterData = {
+					PREFIX: allMasterData.filter((m) => m.category === 'PREFIX'),
+					OCCUPATION: allMasterData.filter((m) => m.category === 'OCCUPATION'),
+					NATIONALITY: allMasterData.filter((m) => m.category === 'NATIONALITY'),
+					MARITAL_STATUS: allMasterData.filter((m) => m.category === 'MARITAL_STATUS')
+				};
+			}
+		} catch (error) {
+			// Final fallback: use server data if IndexedDB completely fails
+			console.error('Critical error loading cached data, falling back to server data:', error);
+			if (data.diseases?.length) cachedDiseases = data.diseases;
+			if (data.hospitals?.length) cachedHospitals = data.hospitals;
+			if (data.provinces?.length) cachedProvinces = data.provinces;
+			if (data.masterData) {
+				cachedMasterData = {
+					PREFIX: data.masterData.PREFIX || [],
+					OCCUPATION: data.masterData.OCCUPATION || [],
+					NATIONALITY: data.masterData.NATIONALITY || [],
+					MARITAL_STATUS: data.masterData.MARITAL_STATUS || []
+				};
+			}
 		}
 	});
 
@@ -625,7 +704,7 @@
 								bind:value={$form.patient.prefix}
 								label="คำนำหน้า"
 								placeholder="เลือกคำนำหน้า"
-								clientData={(browser && !$isOnline && cachedMasterData?.PREFIX ? cachedMasterData.PREFIX : (data.masterData?.PREFIX || [])) || []}
+								clientData={(data.masterData?.PREFIX?.length ? data.masterData.PREFIX : cachedMasterData?.PREFIX) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -728,7 +807,7 @@
 								bind:value={$form.patient.nationality}
 								label="สัญชาติ"
 								placeholder="เลือกสัญชาติ"
-								clientData={(browser && !$isOnline && cachedMasterData?.NATIONALITY ? cachedMasterData.NATIONALITY : (data.masterData?.NATIONALITY || [])) || []}
+								clientData={(data.masterData?.NATIONALITY?.length ? data.masterData.NATIONALITY : cachedMasterData?.NATIONALITY) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -749,7 +828,7 @@
 								bind:value={$form.patient.occupation}
 								label="อาชีพ"
 								placeholder="เลือกอาชีพ"
-								clientData={(browser && !$isOnline && cachedMasterData?.OCCUPATION ? cachedMasterData.OCCUPATION : (data.masterData?.OCCUPATION || [])) || []}
+								clientData={(data.masterData?.OCCUPATION?.length ? data.masterData.OCCUPATION : cachedMasterData?.OCCUPATION) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -770,7 +849,7 @@
 								bind:value={$form.patient.maritalStatus}
 								label="สถานภาพ"
 								placeholder="เลือกสถานภาพ"
-								clientData={(browser && !$isOnline && cachedMasterData?.MARITAL_STATUS ? cachedMasterData.MARITAL_STATUS : (data.masterData?.MARITAL_STATUS || [])) || []}
+								clientData={(data.masterData?.MARITAL_STATUS?.length ? data.masterData.MARITAL_STATUS : cachedMasterData?.MARITAL_STATUS) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -869,7 +948,7 @@
 								bind:value={$form.patient.provinceId}
 								label="จังหวัด"
 								placeholder="เลือกจังหวัด"
-								clientData={(browser && !$isOnline ? cachedProvinces : data.provinces) || []}
+								clientData={($isOnline && data.provinces?.length ? data.provinces : cachedProvinces) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
@@ -1014,7 +1093,7 @@
 								bind:value={$form.sickProvinceId}
 								label="จังหวัด"
 								placeholder="เลือกจังหวัด"
-								clientData={(browser && !$isOnline ? cachedProvinces : data.provinces) || []}
+								clientData={($isOnline && data.provinces?.length ? data.provinces : cachedProvinces) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
@@ -1146,7 +1225,7 @@
 								bind:value={$form.hospitalId}
 								label="หน่วยงานที่รายงาน"
 								placeholder="เลือกหน่วยงาน"
-								clientData={(browser && !$isOnline && cachedHospitals.length > 0 ? cachedHospitals : data.hospitals) || []}
+								clientData={($isOnline && data.hospitals?.length ? data.hospitals : cachedHospitals) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									const q = query.toLowerCase();
@@ -1191,7 +1270,7 @@
 								bind:value={$form.diseaseId}
 								label="โรค"
 								placeholder="เลือกโรค"
-								clientData={(browser && !$isOnline && cachedDiseases.length > 0 ? cachedDiseases : data.diseases) || []}
+								clientData={($isOnline && data.diseases?.length ? data.diseases : cachedDiseases) || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									const q = query.toLowerCase();

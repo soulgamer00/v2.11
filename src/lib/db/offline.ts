@@ -152,6 +152,18 @@ export class VBDOfflineDB extends Dexie {
 				})
 			);
 		});
+
+		// Version 3: Force recreation of indices to fix DataError with isActive index
+		this.version(3).stores({
+			offlineCases: 'id, clientId, patientId, hospitalId, syncStatus, createdAt',
+			offlinePatients: 'id, idCard, synced, createdAt',
+			masterData: 'id, category',
+			diseases: 'id, code, isActive',
+			hospitals: 'id, code9',
+			provinces: 'id, code',
+			amphoes: 'id, code, provinceId',
+			tambons: 'id, code, amphoeId'
+		});
 	}
 }
 
