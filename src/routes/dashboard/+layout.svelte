@@ -338,7 +338,6 @@
 					<a href="/" class="btn btn-ghost btn-circle" aria-label="ไปหน้าแรก" title="ไปหน้าแรก">
 						<Icon name="home" size={20} />
 					</a>
-					<ThemeToggle />
 					<div class="dropdown dropdown-end">
 						<button class="btn btn-ghost btn-circle avatar hover:scale-105 transition-transform" tabindex="0" aria-label="User menu">
 							<div class="w-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-semibold text-lg">
@@ -375,7 +374,10 @@
 			<label for="drawer-toggle" class="drawer-overlay"></label>
 			<aside class="w-64 sm:w-72 bg-base-100 min-h-full">
 				<div class="p-3 sm:p-4">
-					<h2 class="text-xl sm:text-2xl font-bold">เมนู</h2>
+					<div class="flex items-center justify-between">
+						<h2 class="text-xl sm:text-2xl font-bold">เมนู</h2>
+						<ThemeToggle />
+					</div>
 				</div>
 				<ul class="menu p-2 sm:p-4 text-sm sm:text-base">
 					<li>

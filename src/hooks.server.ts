@@ -77,7 +77,8 @@ const protectedRoutesHandle: Handle = async ({ event, resolve }) => {
 	const isPublicRoute = 
 		path === '/' || 
 		path === '/login' ||
-		path.startsWith('/api/') && path.includes('/reference-data');
+		path.startsWith('/report') || // Public disease report pages
+		(path.startsWith('/api/') && path.includes('/reference-data'));
 
 	// If not logged in and trying to access protected route
 	if (!user && !isPublicRoute) {

@@ -15,6 +15,21 @@ const loadFont = async (path: string): Promise<string> => {
 	});
 };
 
+// Helper function to load image as base64
+const loadImage = async (path: string): Promise<string> => {
+	const response = await fetch(path);
+	const blob = await response.blob();
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onloadend = () => {
+			const result = reader.result as string;
+			resolve(result);
+		};
+		reader.onerror = reject;
+		reader.readAsDataURL(blob);
+	});
+};
+
 export const generateReportPDF = async (
 	data: {
 		summary: {
@@ -58,42 +73,84 @@ export const generateReportPDF = async (
 		doc.addFont('Sarabun.ttf', 'Sarabun', 'normal');
 		doc.setFont('Sarabun');
 
-		// ================= HEADER =================
-		// วาดแถบสีด้านบนสุด
-		doc.setFillColor(59, 130, 246); // Primary Blue
-		doc.rect(0, 0, 210, 15, 'F');
-
-		// ชื่อรายงาน
-		doc.setTextColor(255, 255, 255);
-		doc.setFontSize(24);
-		doc.text('รายงานสรุปสถานการณ์โรคติดต่อ', 105, 10, { align: 'center' });
+		// ================= HEADER (White theme) =================
+		const headerHeight = 45;
+		
+		// White header background
+		doc.setFillColor(255, 255, 255); // White
+		doc.rect(0, 0, 210, headerHeight, 'F');
+		
+		// Gray border line at bottom of header
+		doc.setDrawColor(200, 200, 200);
+		doc.setLineWidth(1);
+		doc.line(0, headerHeight, 210, headerHeight);
+		
+		// Load and add logo (left side)
+		let logoLoaded = false;
+		try {
+			// Try multiple possible paths
+			const logoPaths = ['/logo/logo.png', '/static/logo/logo.png', 'logo/logo.png'];
+			let logoData: string | null = null;
+			
+			for (const path of logoPaths) {
+				try {
+					logoData = await loadImage(path);
+					break;
+				} catch (e) {
+					continue;
+				}
+			}
+			
+			if (logoData) {
+				const logoWidth = 30; // mm
+				const logoHeight = 30; // mm
+				const logoX = 14 + 5;
+				const logoY = (headerHeight - logoHeight) / 2;
+				doc.addImage(logoData, 'PNG', logoX, logoY, logoWidth, logoHeight);
+				logoLoaded = true;
+			}
+		} catch (error) {
+			console.warn('Failed to load logo:', error);
+		}
+		
+		// Organization name (top, dark text on white background)
+		doc.setTextColor(0, 0, 0);
+		doc.setFontSize(18);
+		doc.setFont('Sarabun', 'normal');
+		doc.text('สำนักงานสาธารณสุขอำเภอวิเชียรบุรี', 105, 15, { align: 'center' });
+		
+		// Report title (middle, dark text)
+		doc.setFontSize(16);
+		doc.setFont('Sarabun', 'normal');
+		doc.text('รายงานสรุปสถานการณ์โรคติดต่อ', 105, 28, { align: 'center' });
+		
+		// Hospital and year info (bottom, gray text)
+		doc.setFontSize(11);
+		doc.setTextColor(100, 100, 100);
+		const hospitalLabel = data.selectedHospitalName || 'ภาพรวมทุกหน่วยงาน';
+		const yearLabel = data.selectedYear ? `ปีงบประมาณ: ${data.selectedYear + 543}` : '';
+		const headerInfoText = `${hospitalLabel} | ${yearLabel}`;
+		doc.text(headerInfoText, 105, 38, { align: 'center' });
 
 		// ข้อมูลทั่วไป (สีดำ)
 		doc.setTextColor(0, 0, 0);
-		let yPos = 25;
+		let yPos = headerHeight + 12;
 
-		doc.setFontSize(16);
-		const hospitalLabel = data.selectedHospitalName || 'ภาพรวมทุกหน่วยงาน';
-		doc.text(`หน่วยงาน: ${hospitalLabel}`, 14, yPos);
-
-		const yearLabel = data.selectedYear ? `ประจำปี พ.ศ. ${data.selectedYear + 543}` : '';
-		doc.text(yearLabel, 200, yPos, { align: 'right' });
-
-		yPos += 7;
-		doc.setFontSize(12);
-		doc.setTextColor(100);
+		// Info box with light green background (Ministry style)
+		doc.setFillColor(232, 245, 233); // Very light green #E8F5E9
+		doc.roundedRect(14, yPos, 182, 8, 2, 2, 'F');
+		
+		doc.setTextColor(45, 122, 50); // Ministry green text
+		doc.setFontSize(11);
+		doc.setFont('Sarabun', 'normal');
+		// Note: jsPDF doesn't support setFontStyle, using larger font size for emphasis
 		const now = new Date();
 		const thaiDate = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear() + 543}`;
-		
 		const popText = data.population ? `ประชากร: ${data.population.toLocaleString('th-TH')} คน` : '';
-		doc.text(`${popText} | วันที่ออกรายงาน: ${thaiDate}`, 14, yPos);
+		const infoText = `${popText} | วันที่ออกรายงาน: ${thaiDate}`;
+		doc.text(infoText, 105, yPos + 6, { align: 'center' });
 
-		// เส้นคั่น
-		yPos += 3;
-		doc.setDrawColor(200);
-		doc.setLineWidth(0.5);
-		doc.line(14, yPos, 196, yPos);
-		yPos += 10;
+		yPos += 12;
 
 		// ================= SUMMARY CARDS (DASHBOARD STYLE) =================
 		// สร้างกล่องสี่เหลี่ยม 4 กล่องเรียงกัน
@@ -103,30 +160,28 @@ export const generateReportPDF = async (
 		let xCard = 14;
 
 		const cards = [
-			{ title: 'รายงานทั้งหมด', value: data.summary.totalCases, color: [59, 130, 246] }, // Blue
-			{ title: 'หายแล้ว', value: data.summary.recovered, color: [16, 185, 129] },      // Green
-			{ title: 'รักษาอยู่', value: data.summary.underTreatment, color: [245, 158, 11] }, // Orange
-			{ title: 'เสียชีวิต', value: data.summary.died, color: [239, 68, 68] }            // Red
+			{ title: 'รายงานทั้งหมด', value: data.summary.totalCases, color: [45, 122, 50] }, // Ministry Green
+			{ title: 'หายแล้ว', value: data.summary.recovered, color: [76, 175, 80] },      // Medium Green
+			{ title: 'รักษาอยู่', value: data.summary.underTreatment, color: [129, 199, 132] }, // Light Green
+			{ title: 'เสียชีวิต', value: data.summary.died, color: [211, 47, 47] }            // Red (slightly adjusted)
 		];
 
-		cards.forEach((card) => {
-			// Card Background (Light)
+		cards.forEach((card, index) => {
+			// Card Background (Full fill for Ministry theme)
 			doc.setFillColor(card.color[0], card.color[1], card.color[2]);
-			doc.setDrawColor(card.color[0], card.color[1], card.color[2]);
-			doc.roundedRect(xCard, yPos, cardWidth, cardHeight, 2, 2, 'D'); // Border only
+			doc.roundedRect(xCard, yPos, cardWidth, cardHeight, 3, 3, 'F');
 			
-			// Fill header part slightly
-			doc.rect(xCard, yPos, cardWidth, 8, 'F');
-
-			// Title
+			// Title (white text on colored background)
 			doc.setTextColor(255, 255, 255);
-			doc.setFontSize(12);
-			doc.text(card.title, xCard + cardWidth / 2, yPos + 5.5, { align: 'center' });
+			doc.setFontSize(11);
+			doc.setFont('Sarabun', 'normal');
+			doc.text(card.title, xCard + cardWidth / 2, yPos + 6, { align: 'center' });
 
-			// Value
-			doc.setTextColor(card.color[0], card.color[1], card.color[2]);
+			// Value (white text for dark cards, black for light cards)
+			const isLightCard = index === 2; // Light green card
+			doc.setTextColor(isLightCard ? 0 : 255, isLightCard ? 0 : 255, isLightCard ? 0 : 255);
 			doc.setFontSize(22);
-			doc.text(card.value.toString(), xCard + cardWidth / 2, yPos + 19, { align: 'center' });
+			doc.text(card.value.toString(), xCard + cardWidth / 2, yPos + 20, { align: 'center' });
 
 			xCard += cardWidth + gap;
 		});
@@ -137,10 +192,12 @@ export const generateReportPDF = async (
 		// ตรวจสอบหน้าใหม่
 		if (yPos + 70 > 280) { doc.addPage(); yPos = 20; }
 
-		doc.setFillColor(240, 240, 240);
-		doc.rect(14, yPos, 182, 8, 'F');
-		doc.setTextColor(0);
+		// Section header with Ministry green background
+		doc.setFillColor(45, 122, 50); // Ministry Green
+		doc.roundedRect(14, yPos, 182, 8, 2, 2, 'F');
+		doc.setTextColor(255, 255, 255);
 		doc.setFontSize(14);
+		doc.setFont('Sarabun', 'normal');
 		doc.text('1. การกระจายตามกลุ่มอายุ', 16, yPos + 5.5);
 		yPos += 12;
 
@@ -161,7 +218,7 @@ export const generateReportPDF = async (
 			head: [['กลุ่มอายุ', 'จำนวน']],
 			body: ageData,
 			theme: 'grid',
-			headStyles: { fillColor: [59, 130, 246], font: 'Sarabun', halign: 'center' },
+			headStyles: { fillColor: [45, 122, 50], textColor: 255, font: 'Sarabun', halign: 'center' },
 			bodyStyles: { font: 'Sarabun', halign: 'center' },
 			styles: { font: 'Sarabun', fontSize: 10, cellPadding: 2 },
 			tableWidth: 80
@@ -174,10 +231,13 @@ export const generateReportPDF = async (
 		// ================= SECTION 2: DISEASE DISTRIBUTION (Chart Left, Table Right) =================
 		if (yPos + 70 > 280) { doc.addPage(); yPos = 20; }
 
-		doc.setFillColor(240, 240, 240);
-		doc.rect(14, yPos, 182, 8, 'F');
-		doc.setTextColor(0);
+		// Section header with Ministry green background
+		doc.setFillColor(76, 175, 80); // Medium Green
+		doc.roundedRect(14, yPos, 182, 8, 2, 2, 'F');
+		doc.setTextColor(255, 255, 255);
 		doc.setFontSize(14);
+		doc.setFont('Sarabun', 'normal');
+		// Note: jsPDF doesn't support setFontStyle, using larger font size for emphasis
 		doc.text('2. การกระจายตามโรค', 16, yPos + 5.5);
 		yPos += 12;
 
@@ -195,7 +255,7 @@ export const generateReportPDF = async (
 			head: [['โรค', 'จำนวน']],
 			body: diseaseData,
 			theme: 'grid',
-			headStyles: { fillColor: [16, 185, 129], font: 'Sarabun', halign: 'center' }, // Green header
+			headStyles: { fillColor: [76, 175, 80], textColor: 255, font: 'Sarabun', halign: 'center' }, // Medium Green header
 			bodyStyles: { font: 'Sarabun', halign: 'center' },
 			styles: { font: 'Sarabun', fontSize: 10, cellPadding: 2 },
 			tableWidth: 80
@@ -206,10 +266,13 @@ export const generateReportPDF = async (
 		// ================= SECTION 3: MONTHLY TREND (Full Width) =================
 		if (yPos + 80 > 280) { doc.addPage(); yPos = 20; }
 
-		doc.setFillColor(240, 240, 240);
-		doc.rect(14, yPos, 182, 8, 'F');
-		doc.setTextColor(0);
+		// Section header with Ministry green background
+		doc.setFillColor(129, 199, 132); // Light Green
+		doc.roundedRect(14, yPos, 182, 8, 2, 2, 'F');
+		doc.setTextColor(0, 0, 0); // Black text on light background
 		doc.setFontSize(14);
+		doc.setFont('Sarabun', 'normal');
+		// Note: jsPDF doesn't support setFontStyle, using larger font size for emphasis
 		doc.text('3. แนวโน้มรายเดือน', 16, yPos + 5.5);
 		yPos += 12;
 
@@ -242,10 +305,13 @@ export const generateReportPDF = async (
 		if (data.morbidityRates.length > 0) {
 			if (yPos + 40 > 280) { doc.addPage(); yPos = 20; }
 
-			doc.setFillColor(240, 240, 240);
-			doc.rect(14, yPos, 182, 8, 'F');
-			doc.setTextColor(0);
+			// Section header with Ministry green background
+			doc.setFillColor(45, 122, 50); // Ministry Green
+			doc.roundedRect(14, yPos, 182, 8, 2, 2, 'F');
+			doc.setTextColor(255, 255, 255);
 			doc.setFontSize(14);
+			doc.setFont('Sarabun', 'normal');
+			// Note: jsPDF doesn't support setFontStyle, using larger font size for emphasis
 			doc.text('4. อัตราป่วยต่อแสนประชากร (Morbidity Rate)', 16, yPos + 5.5);
 			yPos += 12;
 
@@ -261,7 +327,7 @@ export const generateReportPDF = async (
 				head: [['โรค', 'จำนวนผู้ป่วย', 'ประชากร', 'อัตราป่วย (ต่อแสน)']],
 				body: morbidityData,
 				theme: 'striped',
-				headStyles: { fillColor: [50, 50, 50], font: 'Sarabun', halign: 'center' }, // Dark header
+				headStyles: { fillColor: [45, 122, 50], textColor: 255, font: 'Sarabun', halign: 'center' }, // Ministry Green header
 				bodyStyles: { font: 'Sarabun', halign: 'center' },
 				columnStyles: {
 					0: { halign: 'left' },
@@ -280,7 +346,7 @@ export const generateReportPDF = async (
 			doc.setFontSize(10);
 			doc.setTextColor(150);
 			doc.text(
-				`หน้า ${i} จาก ${pageCount} | VBD-DB Report System`,
+				`หน้า ${i} จาก ${pageCount} | รายงานสถานการณ์โรคติดต่อนำโดยแมลง สำนักงานสาธารณสุขอำเภอวิเชียรบุรี`,
 				105,
 				290,
 				{ align: 'center' }

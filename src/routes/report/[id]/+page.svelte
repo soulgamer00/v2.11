@@ -4,6 +4,8 @@
 	import type { PageData } from './$types';
 	import Chart from 'chart.js/auto';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import Icon from '$lib/components/icons/Icon.svelte';
+	import { generateDiseaseReportPDF } from '$lib/utils/disease-report-pdf';
 
 	let { data }: { data: PageData } = $props();
 
@@ -12,6 +14,11 @@
 	let occupationChartCanvas: HTMLCanvasElement;
 
 	let charts: Chart[] = [];
+
+	// สถานะสำหรับ Preview Modal
+	let showPreviewModal = $state(false);
+	let previewUrl = $state<string>('');
+	let isPrinting = $state(false);
 
 	// Filter State
 	let selectedYear = $state(data.filters.year);
@@ -125,6 +132,131 @@
 
 		goto(`?${params.toString()}`);
 	}
+
+	async function handlePrint(mode: 'save' | 'preview' = 'save') {
+		if (isPrinting) return; // ป้องกันการกดซ้ำ
+		isPrinting = true;
+		
+		try {
+			// Wait a bit to ensure charts are fully rendered
+			await new Promise(resolve => setTimeout(resolve, 100));
+
+			// Check if charts are ready
+			if (!charts || charts.length < 3) {
+				console.warn('Charts not ready, initializing...');
+				// Try to initialize charts if not ready
+				if (genderChartCanvas && trendChartCanvas && occupationChartCanvas) {
+					initCharts();
+					await new Promise(resolve => setTimeout(resolve, 200));
+				} else {
+					throw new Error('Chart canvases not available');
+				}
+			}
+
+			// Determine areaName based on selected filters
+			let areaName = 'ทุกพื้นที่';
+			
+			if (selectedHospital) {
+				const hospital = data.masterData.hospitals.find(h => h.id === selectedHospital);
+				areaName = hospital ? hospital.name : 'ไม่ระบุหน่วยงาน';
+			} else if (selectedTambon) {
+				const tambon = data.masterData.tambons.find(t => t.id === selectedTambon);
+				areaName = tambon ? tambon.nameTh : 'ไม่ระบุตำบล';
+			} else if (selectedAmphoe) {
+				const amphoe = data.masterData.amphoes.find(a => a.id === selectedAmphoe);
+				areaName = amphoe ? amphoe.nameTh : 'ไม่ระบุอำเภอ';
+			} else if (selectedProvince) {
+				const province = data.masterData.provinces.find(p => p.id === selectedProvince);
+				areaName = province ? province.nameTh : 'ไม่ระบุจังหวัด';
+			}
+
+			// Capture chart images
+			// Note: charts array order is: 0=Gender, 1=Trend, 2=Occupation
+			const chartImages: { trendChart?: string; genderChart?: string; occupationChart?: string } = {};
+			
+			try {
+				if (charts[1] && typeof charts[1].toBase64Image === 'function') {
+					chartImages.trendChart = charts[1].toBase64Image('image/png', 1.0);
+				}
+			} catch (e) {
+				console.warn('Failed to capture trend chart:', e);
+			}
+
+			try {
+				if (charts[0] && typeof charts[0].toBase64Image === 'function') {
+					chartImages.genderChart = charts[0].toBase64Image('image/png', 1.0);
+				}
+			} catch (e) {
+				console.warn('Failed to capture gender chart:', e);
+			}
+
+			try {
+				if (charts[2] && typeof charts[2].toBase64Image === 'function') {
+					chartImages.occupationChart = charts[2].toBase64Image('image/png', 1.0);
+				}
+			} catch (e) {
+				console.warn('Failed to capture occupation chart:', e);
+			}
+
+			// Prepare data for PDF
+			const pdfData = {
+				diseaseName: data.disease.nameTh,
+				diseaseCode: data.disease.code,
+				year: selectedYear,
+				areaName,
+				stats: {
+					totalCases: data.stats.totalCases,
+					totalPopulation: data.stats.totalPopulation,
+					incidenceRate: data.stats.incidenceRate
+				},
+				genderStats: data.reports.genderStats,
+				occupations: data.reports.occupations,
+				ageStats: data.reports.ageStats,
+				historicalData: data.reports.historicalData
+			};
+
+			// Generate PDF
+			const result = await generateDiseaseReportPDF(pdfData, chartImages, mode);
+			
+			if (mode === 'preview' && result) {
+				// Revoke previous URL if exists
+				if (previewUrl) {
+					URL.revokeObjectURL(previewUrl);
+				}
+				previewUrl = result;
+				showPreviewModal = true;
+			}
+		} catch (error) {
+			console.error('Error generating PDF:', error);
+			alert(`เกิดข้อผิดพลาดในการสร้าง PDF: ${error instanceof Error ? error.message : 'กรุณาลองอีกครั้ง'}`);
+		} finally {
+			isPrinting = false;
+		}
+	}
+
+	// ฟังก์ชันปิด Preview Modal และลบ URL
+	function closePreviewModal() {
+		showPreviewModal = false;
+		if (previewUrl) {
+			URL.revokeObjectURL(previewUrl);
+			previewUrl = '';
+		}
+	}
+
+	// ฟังก์ชันดาวน์โหลด PDF จาก Preview
+	async function confirmDownload() {
+		if (!previewUrl) return;
+		
+		try {
+			// Generate PDF again in save mode
+			await handlePrint('save');
+			// Close modal after download starts
+			closePreviewModal();
+		} catch (error) {
+			console.error('Download Failed:', error);
+			alert('ไม่สามารถดาวน์โหลด PDF ได้ กรุณาลองใหม่อีกครั้ง');
+		}
+	}
 </script>
 
 <svelte:head>
@@ -147,7 +279,31 @@
 			</div>
 		</div>
 		<div class="flex-none gap-2">
+			<a href="/" class="btn btn-ghost btn-circle" aria-label="ไปหน้าแรก" title="ไปหน้าแรก">
+				<Icon name="home" size={20} />
+			</a>
 			<ThemeToggle />
+			<button class="btn btn-outline btn-sm" onclick={() => handlePrint('preview')} disabled={isPrinting}>
+				{#if isPrinting}
+					<span class="loading loading-spinner"></span> กำลังสร้าง PDF...
+				{:else}
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+					</svg>
+					Preview
+				{/if}
+			</button>
+			<button class="btn btn-primary btn-sm" onclick={() => handlePrint('save')} disabled={isPrinting}>
+				{#if isPrinting}
+					<span class="loading loading-spinner"></span> กำลังสร้าง PDF...
+				{:else}
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+					</svg>
+					ดาวน์โหลด PDF
+				{/if}
+			</button>
 			{#if data.user}
 				<a href="/dashboard" class="btn btn-primary btn-sm">Dashboard</a>
 			{:else}
@@ -238,12 +394,15 @@
 					<div class="text-sm text-base-content/60">
 						ข้อมูล ณ วันที่ {new Date().toLocaleDateString('th-TH')}
 					</div>
-					<div class="flex gap-4">
+					<div class="flex gap-3 flex-wrap">
+						<div class="badge badge-secondary gap-2 p-3">
+							ผู้ป่วย: {data.stats.totalCases.toLocaleString('th-TH')} ราย
+						</div>
+						<div class="badge badge-success gap-2 p-3">
+							ประชากร: {data.stats.totalPopulation.toLocaleString('th-TH')} คน
+						</div>
 						<div class="badge badge-primary gap-2 p-3">
 							อัตราป่วย: {data.stats.incidenceRate} / แสน
-						</div>
-						<div class="badge badge-secondary gap-2 p-3">
-							ผู้ป่วย: {data.stats.totalCases.toLocaleString()} ราย
 						</div>
 					</div>
 				</div>
@@ -436,3 +595,36 @@
 		</div>
 	</div>
 </div>
+
+<!-- PDF Preview Modal -->
+{#if showPreviewModal}
+	<div class="modal modal-open">
+		<div class="modal-box max-w-7xl w-full h-[90vh] flex flex-col">
+			<h3 class="font-bold text-lg mb-4">PDF Preview - รายงานสถานการณ์โรค {data.disease.nameTh}</h3>
+			<div class="flex-1 border border-base-300 rounded-lg overflow-hidden">
+				<iframe 
+					src={previewUrl} 
+					class="w-full h-full"
+					title="PDF Preview"
+				></iframe>
+			</div>
+			<div class="modal-action mt-4">
+				<button class="btn btn-outline" onclick={closePreviewModal}>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+					ปิด
+				</button>
+				<button class="btn btn-primary" onclick={confirmDownload}>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+					</svg>
+					ยืนยันดาวน์โหลด
+				</button>
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop" onclick={closePreviewModal}>
+			<button>close</button>
+		</form>
+	</div>
+{/if}
