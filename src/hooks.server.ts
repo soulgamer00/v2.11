@@ -51,11 +51,31 @@ const protectedRoutesHandle: Handle = async ({ event, resolve }) => {
 	const user = event.locals.user;
 	const path = event.url.pathname;
 
-	// Public routes
-	const publicRoutes = ['/login', '/'];
+	// Static assets and public resources that should bypass auth
+	const staticAssets = [
+		'/_app',
+		'/favicon',
+		'/manifest',
+		'/sw.js',
+		'/workbox-',
+		'/.well-known',
+		'/api/reference-data' // Public API endpoint
+	];
+
+	// Check if path is a static asset
+	const isStaticAsset = staticAssets.some((asset) => path.startsWith(asset));
+	if (isStaticAsset) {
+		return resolve(event);
+	}
+
+	// Public routes (exact matches or specific paths)
+	const isPublicRoute = 
+		path === '/' || 
+		path === '/login' ||
+		path.startsWith('/api/') && path.includes('/reference-data');
 
 	// If not logged in and trying to access protected route
-	if (!user && !publicRoutes.some((route) => path.startsWith(route))) {
+	if (!user && !isPublicRoute) {
 		return new Response(null, {
 			status: 302,
 			headers: {

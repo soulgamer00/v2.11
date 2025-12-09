@@ -15,7 +15,8 @@ export const userSchema = z.object({
 		if (val === 'on' || val === 'true' || val === '1') return true;
 		if (val === 'off' || val === 'false' || val === '0' || val === '' || val === null || val === undefined) return false;
 		return Boolean(val);
-	}).default('true')
+	}).default('true'),
+	permissions: z.array(z.string()).optional().default([])
 }).refine((data) => {
 	// If role is USER, hospitalId is required
 	// For ADMIN and SUPERADMIN, hospitalId is optional

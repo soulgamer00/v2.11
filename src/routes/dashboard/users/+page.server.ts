@@ -44,21 +44,86 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		where.role = 'USER';
 	}
 
-	const [users, hospitals] = await Promise.all([
-		prisma.user.findMany({
-			where,
-			include: {
-				hospital: true
-			},
-			orderBy: { createdAt: 'desc' }
-		}),
-		prisma.hospital.findMany({
-			where: {
-				deletedAt: null // Only show non-deleted hospitals
-			},
-			orderBy: { name: 'asc' }
-		})
-	]);
+	let users, hospitals;
+	try {
+		// Use include to get all fields including permissions if it exists
+		// If permissions field doesn't exist, Prisma will just not include it
+		[users, hospitals] = await Promise.all([
+			prisma.user.findMany({
+				where,
+				include: {
+					hospital: {
+						select: {
+							id: true,
+							name: true
+						}
+					}
+				},
+				orderBy: { createdAt: 'desc' }
+			}),
+			prisma.hospital.findMany({
+				where: {
+					deletedAt: null // Only show non-deleted hospitals
+				},
+				orderBy: { name: 'asc' }
+			})
+		]);
+
+		// Map users to ensure permissions field exists (default to empty array if not present)
+		users = users.map((user: any) => ({
+			...user,
+			permissions: user.permissions || []
+		}));
+	} catch (error: any) {
+		console.error('Error loading users:', error);
+		
+		// If error is about permissions field, retry without it
+		if (error?.message?.includes('permissions') || error?.code === 'P2009') {
+			try {
+				[users, hospitals] = await Promise.all([
+					prisma.user.findMany({
+						where,
+						select: {
+							id: true,
+							username: true,
+							fullName: true,
+							role: true,
+							hospitalId: true,
+							isActive: true,
+							createdAt: true,
+							hospital: {
+								select: {
+									id: true,
+									name: true
+								}
+							}
+						},
+						orderBy: { createdAt: 'desc' }
+					}),
+					prisma.hospital.findMany({
+						where: {
+							deletedAt: null
+						},
+						orderBy: { name: 'asc' }
+					})
+				]);
+				
+				// Add empty permissions array to each user
+				users = users.map((user: any) => ({
+					...user,
+					permissions: []
+				}));
+			} catch (retryError) {
+				console.error('Error loading users (retry failed):', retryError);
+				users = [];
+				hospitals = [];
+			}
+		} else {
+			// Other error, return empty arrays
+			users = [];
+			hospitals = [];
+		}
+	}
 
 	const form = await superValidate(zod(userSchema));
 
@@ -78,7 +143,14 @@ export const actions: Actions = {
 			return fail(403, { message: 'ไม่มีสิทธิ์เข้าถึง' });
 		}
 
-		const form = await superValidate(request, zod(userSchema));
+		// Handle permissions array from form data
+		const formData = await request.formData();
+		const permissionsArray = formData.getAll('permissions') as string[];
+		
+		const form = await superValidate(
+			{ ...Object.fromEntries(formData), permissions: permissionsArray },
+			zod(userSchema)
+		);
 
 		if (!form.valid) {
 			return fail(400, { form });
@@ -109,16 +181,31 @@ export const actions: Actions = {
 		try {
 			const passwordHash = await bcrypt.hash(form.data.password, 10);
 
+			// Build create data object
+			const createData: any = {
+				username: form.data.username,
+				passwordHash,
+				fullName: form.data.fullName,
+				role: form.data.role,
+				hospitalId: form.data.hospitalId ? Number(form.data.hospitalId) : null,
+				isActive: Boolean(form.data.isActive),
+				creatorId: currentUser.id
+			};
+
+			// Restrict permissions: Only SUPERADMIN can set permissions
+			// If not SUPERADMIN, set empty array
+			if (currentUser.role === 'SUPERADMIN') {
+				// Always set permissions, even if empty array
+				createData.permissions = Array.isArray(form.data.permissions) 
+					? form.data.permissions 
+					: (form.data.permissions ? [form.data.permissions] : []);
+			} else {
+				// Non-SUPERADMIN users get empty permissions array
+				createData.permissions = [];
+			}
+
 			const newUser = await prisma.user.create({
-				data: {
-					username: form.data.username,
-					passwordHash,
-					fullName: form.data.fullName,
-					role: form.data.role,
-					hospitalId: form.data.hospitalId ? Number(form.data.hospitalId) : null,
-					isActive: Boolean(form.data.isActive),
-					creatorId: currentUser.id
-				}
+				data: createData
 			});
 
 			await logAudit(currentUser.id, AuditActions.CREATE, `${AuditResources.USER}:${newUser.username}`);
@@ -136,7 +223,14 @@ export const actions: Actions = {
 			return fail(403, { message: 'ไม่มีสิทธิ์เข้าถึง' });
 		}
 
-		const form = await superValidate(request, zod(userSchema));
+		// Handle permissions array from form data
+		const formData = await request.formData();
+		const permissionsArray = formData.getAll('permissions') as string[];
+		
+		const form = await superValidate(
+			{ ...Object.fromEntries(formData), permissions: permissionsArray },
+			zod(userSchema)
+		);
 
 		if (!form.valid || !form.data.id) {
 			return fail(400, { form });
@@ -172,6 +266,16 @@ export const actions: Actions = {
 				updateData.passwordHash = await bcrypt.hash(form.data.password, 10);
 			}
 
+			// Restrict permissions: Only SUPERADMIN can modify permissions
+			// If not SUPERADMIN, exclude permissions from update (preserve existing)
+			if (currentUser.role === 'SUPERADMIN') {
+				// Always update permissions if SUPERADMIN, even if empty array
+				updateData.permissions = Array.isArray(form.data.permissions) 
+					? form.data.permissions 
+					: (form.data.permissions ? [form.data.permissions] : []);
+			}
+			// If not SUPERADMIN, permissions field is not included, so it remains unchanged
+
 			const updatedUser = await prisma.user.update({
 				where: { id: form.data.id },
 				data: updateData
@@ -200,16 +304,56 @@ export const actions: Actions = {
 
 		try {
 			const deletedUser = await prisma.user.findUnique({ where: { id } });
+			
+			if (!deletedUser) {
+				return fail(404, { message: 'ไม่พบผู้ใช้งานที่ต้องการลบ' });
+			}
+
 			await prisma.user.delete({ where: { id } });
 
-			if (deletedUser) {
-				await logAudit(currentUser.id, AuditActions.DELETE, `${AuditResources.USER}:${deletedUser.username}`);
+			await logAudit(currentUser.id, AuditActions.DELETE, `${AuditResources.USER}:${deletedUser.username}`);
+			
+			// Return success response
+			return { success: true, message: 'ลบผู้ใช้งานสำเร็จ' };
+		} catch (error: any) {
+			console.error('Delete user error:', error);
+			
+			// Handle specific Prisma errors
+			if (error?.code === 'P2003') {
+				return fail(400, { 
+					message: 'ไม่สามารถลบผู้ใช้งานได้ เนื่องจากมีข้อมูลที่เกี่ยวข้องอยู่ (เช่น Session, Notification, หรือ User ที่สร้างโดย user นี้)' 
+				});
 			}
-		} catch (error) {
-			return fail(500, { message: 'เกิดข้อผิดพลาดในการลบข้อมูล' });
+			
+			if (error?.code === 'P2025') {
+				return fail(404, { message: 'ไม่พบผู้ใช้งานที่ต้องการลบ (อาจถูกลบไปแล้ว)' });
+			}
+			
+			// Handle foreign key constraint errors (PostgreSQL)
+			if (error?.message?.includes('Foreign key constraint') || 
+			    error?.message?.includes('violates foreign key constraint')) {
+				return fail(400, { 
+					message: 'ไม่สามารถลบผู้ใช้งานได้ เนื่องจากมีข้อมูลที่เกี่ยวข้องอยู่:\n' +
+					         '- Session ที่ยังใช้งานอยู่\n' +
+					         '- Notification ที่เกี่ยวข้อง\n' +
+					         '- User ที่ถูกสร้างโดย user นี้\n\n' +
+					         'กรุณาลบหรือย้ายข้อมูลที่เกี่ยวข้องก่อน'
+				});
+			}
+			
+			// Generic error with detailed message
+			const errorDetails = error?.message || error?.toString() || 'Unknown error';
+			console.error('Delete user error details:', {
+				code: error?.code,
+				message: error?.message,
+				meta: error?.meta,
+				stack: error?.stack
+			});
+			
+			return fail(500, { 
+				message: `เกิดข้อผิดพลาดในการลบข้อมูล:\n${errorDetails}\n\nกรุณาตรวจสอบ Console (Server) เพื่อดูรายละเอียด` 
+			});
 		}
-
-		return { success: true };
 	}
 };
 

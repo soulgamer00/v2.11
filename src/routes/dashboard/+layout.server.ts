@@ -16,8 +16,18 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		}
 	});
 
+	// Ensure permissions is always an array for serialization
+	const userWithPermissions = {
+		...user,
+		permissions: Array.isArray(user.permissions) 
+			? user.permissions 
+			: (user.permissions ? [user.permissions] : [])
+	};
+
+	console.log('Dashboard layout server - User permissions:', userWithPermissions.permissions);
+
 	return {
-		user,
+		user: userWithPermissions,
 		unreadNotifications: unreadCount
 	};
 };

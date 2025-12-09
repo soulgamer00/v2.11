@@ -11,8 +11,20 @@
 		onResult: ({ result }) => {
 			if (result.type === 'success') {
 				closeModal();
+				// Invalidate all to refresh user data including permissions
 				goto('/dashboard/users', { invalidateAll: true });
+			} else if (result.type === 'failure') {
+				// Handle form validation errors or server errors
+				const errorMessage = result.data?.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล';
+				console.error('Form submission failed:', result);
+				alert(errorMessage);
 			}
+		},
+		onError: ({ result, error }) => {
+			// Handle unexpected errors
+			console.error('Form error:', result, error);
+			const errorMessage = error?.message || result?.error?.message || 'เกิดข้อผิดพลาดที่ไม่คาดคิด';
+			alert(errorMessage);
 		}
 	});
 
@@ -52,22 +64,47 @@
 			fullName: '',
 			role: 'USER',
 			hospitalId: undefined,
-			isActive: true
+			isActive: true,
+			permissions: []
 		};
 		showModal = true;
 	}
 
 	function openEditModal(user: any) {
 		editMode = true;
+		
+		// Debug: Log user data to see what we're getting
+		console.log('Opening edit modal for user:', user);
+		
 		$form = {
 			id: user.id,
 			username: user.username,
 			password: '', // Don't fill password
 			fullName: user.fullName,
 			role: user.role,
-			hospitalId: user.hospitalId ? String(user.hospitalId) : undefined,
-			isActive: user.isActive
+			// Handle hospitalId - can be number, string, or null/undefined
+			hospitalId: user.hospitalId !== null && user.hospitalId !== undefined 
+				? String(user.hospitalId) 
+				: undefined,
+			isActive: user.isActive !== undefined ? user.isActive : true,
+			// Handle permissions - ensure it's always an array
+			permissions: (() => {
+				if (Array.isArray(user.permissions)) {
+					return user.permissions;
+				}
+				if (user.permissions && typeof user.permissions === 'string') {
+					return [user.permissions];
+				}
+				if (user.permissions) {
+					return [user.permissions];
+				}
+				return [];
+			})()
 		};
+		
+		// Debug: Log form data to verify
+		console.log('Form data set to:', $form);
+		
 		showModal = true;
 	}
 
@@ -79,18 +116,69 @@
 	async function handleDelete(id: string) {
 		if (!confirm('คุณแน่ใจหรือไม่ที่จะลบผู้ใช้งานนี้?')) return;
 
-		const formData = new FormData();
-		formData.append('id', id);
+		try {
+			const formData = new FormData();
+			formData.append('id', id);
 
-		const response = await fetch('?/delete', {
-			method: 'POST',
-			body: formData
-		});
+			const response = await fetch('?/delete', {
+				method: 'POST',
+				body: formData,
+				headers: {
+					'accept': 'application/json'
+				}
+			});
 
-		if (response.ok) {
-			goto('/dashboard/users', { invalidateAll: true });
-		} else {
-			alert('เกิดข้อผิดพลาดในการลบ');
+			// Get response text first to see what we got
+			const responseText = await response.text();
+			console.log('Delete response:', response.status, responseText);
+
+			// Check if response is ok
+			if (response.ok) {
+				// Try to parse as JSON
+				try {
+					const result = JSON.parse(responseText);
+					if (result.success || result.type === 'success') {
+						goto('/dashboard/users', { invalidateAll: true });
+						return;
+					} else {
+						const errorMsg = result.message || result.error || 'เกิดข้อผิดพลาดในการลบ';
+						console.error('Delete failed:', result);
+						alert(errorMsg);
+						return;
+					}
+				} catch (parseError) {
+					// If not JSON, check if it's HTML (SvelteKit form action response)
+					if (responseText.includes('success') || response.status === 200) {
+						// Assume success if status is 200
+						goto('/dashboard/users', { invalidateAll: true });
+						return;
+					}
+					console.error('Failed to parse response:', parseError, responseText);
+					alert('ลบสำเร็จ (ไม่สามารถ parse response ได้)');
+				}
+			} else {
+				// Response is not ok, try to get error message
+				let errorMessage = `เกิดข้อผิดพลาดในการลบ (Status: ${response.status})`;
+				
+				try {
+					const result = JSON.parse(responseText);
+					errorMessage = result.message || result.error || result.data?.message || errorMessage;
+					console.error('Delete error response:', result);
+				} catch (parseError) {
+					// Try to extract error from HTML if it's SvelteKit form action response
+					const errorMatch = responseText.match(/message["\s]*:["\s]*([^"<]+)/i);
+					if (errorMatch) {
+						errorMessage = errorMatch[1];
+					}
+					console.error('Failed to parse error response:', parseError, responseText);
+				}
+				
+				alert(errorMessage);
+			}
+		} catch (error) {
+			console.error('Delete error:', error);
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			alert(`เกิดข้อผิดพลาดในการลบ: ${errorMessage}\n\nกรุณาตรวจสอบ Console (F12) เพื่อดูรายละเอียด`);
 		}
 	}
 
@@ -257,11 +345,19 @@
 					>
 						<option value="">เลือกหน่วยงาน</option>
 						{#each data.hospitals as h}
-							<option value={h.id}>{h.name}</option>
+							<option value={String(h.id)} selected={$form.hospitalId === String(h.id)}>
+								{h.name}
+							</option>
 						{/each}
 					</select>
 					{#if $form.role === 'USER' && !$form.hospitalId}
 						<span class="text-error text-sm mt-1">กรุณาเลือกหน่วยงาน</span>
+					{/if}
+					<!-- Debug info -->
+					{#if editMode}
+						<span class="text-xs text-base-content/50 mt-1">
+							Debug: hospitalId = {JSON.stringify($form.hospitalId)}
+						</span>
 					{/if}
 				</div>
 
@@ -270,6 +366,63 @@
 						<span class="label-text">สถานะใช้งาน</span>
 						<input type="checkbox" name="isActive" bind:checked={$form.isActive} class="toggle toggle-primary" value="on" />
 					</label>
+				</div>
+
+				<!-- Permissions Section -->
+				<div class="form-control w-full mt-4">
+					<label class="label">
+						<span class="label-text">สิทธิ์การเข้าถึง (Feature Flags)</span>
+					</label>
+					<div class="border border-base-300 rounded-lg p-4 space-y-2">
+						{#if data.user?.role !== 'SUPERADMIN'}
+							<div class="alert alert-info mb-2">
+								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-5 h-5">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+								</svg>
+								<span class="text-xs">(เฉพาะ SUPERADMIN เท่านั้นที่สามารถจัดการสิทธิ์ได้)</span>
+							</div>
+						{/if}
+						{#each [
+							{ value: 'CAN_CREATE_CASES', label: 'สร้างรายงานเคส' },
+							{ value: 'CAN_EDIT_CASES', label: 'แก้ไขรายงานเคส' },
+							{ value: 'CAN_DELETE_CASES', label: 'ลบรายงานเคส' },
+							{ value: 'CAN_EXPORT_EXCEL', label: 'ส่งออก Excel' },
+							{ value: 'CAN_IMPORT_EXCEL', label: 'นำเข้า Excel' },
+							{ value: 'CAN_VIEW_REPORTS', label: 'ดูรายงาน/สถิติ' },
+							{ value: 'CAN_MANAGE_PATIENTS', label: 'จัดการผู้ป่วย' },
+							{ value: 'CAN_ACCESS_OFFLINE', label: 'ใช้งานแบบออฟไลน์' }
+						] as perm}
+							<label class="cursor-pointer label justify-start gap-3">
+								<input 
+									type="checkbox" 
+									name="permissions" 
+									value={perm.value}
+									class="checkbox checkbox-primary checkbox-sm"
+									disabled={data.user?.role !== 'SUPERADMIN'}
+									checked={Array.isArray($form.permissions) && $form.permissions.includes(perm.value)}
+									onchange={(e) => {
+										if (data.user?.role === 'SUPERADMIN') {
+											if (!$form.permissions) $form.permissions = [];
+											if (e.currentTarget.checked) {
+												if (!$form.permissions.includes(perm.value)) {
+													$form.permissions = [...$form.permissions, perm.value];
+												}
+											} else {
+												$form.permissions = $form.permissions.filter(p => p !== perm.value);
+											}
+										}
+									}}
+								/>
+								<span class="label-text text-sm" class:opacity-50={data.user?.role !== 'SUPERADMIN'}>
+									{perm.label}
+								</span>
+							</label>
+						{/each}
+						<!-- Hidden input to send permissions array - always include even if empty -->
+						{#each ($form.permissions || []) as perm}
+							<input type="hidden" name="permissions" value={perm} />
+						{/each}
+					</div>
 				</div>
 
 				<div class="modal-action">

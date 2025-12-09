@@ -11,6 +11,7 @@ export interface SessionUser {
 	fullName: string;
 	role: 'SUPERADMIN' | 'ADMIN' | 'USER';
 	hospitalId: number | null;
+	permissions?: string[]; // Feature flags / permissions array
 }
 
 /**
@@ -68,7 +69,10 @@ export async function validateCredentials(
 	}
 
 	const { passwordHash: _, isActive: __, ...sessionUser } = user;
-	return sessionUser;
+	return {
+		...sessionUser,
+		permissions: user.permissions || []
+	};
 }
 
 /**
@@ -90,7 +94,8 @@ export async function getUserFromSession(event: RequestEvent): Promise<SessionUs
 					fullName: true,
 					role: true,
 					hospitalId: true,
-					isActive: true
+					isActive: true,
+					permissions: true
 				}
 			}
 		}
@@ -106,7 +111,10 @@ export async function getUserFromSession(event: RequestEvent): Promise<SessionUs
 	}
 
 	const { isActive: _, ...sessionUser } = session.user;
-	return sessionUser;
+	return {
+		...sessionUser,
+		permissions: session.user.permissions || []
+	};
 }
 
 /**
@@ -141,6 +149,36 @@ export function canAccessHospital(user: SessionUser | null, hospitalId: number):
 	
 	// USER can only access their assigned hospital
 	return user.hospitalId === hospitalId;
+}
+
+/**
+ * Check if user has a specific permission
+ */
+export function hasPermission(user: SessionUser | null, permission: string): boolean {
+	if (!user) return false;
+	
+	// SUPERADMIN has all permissions
+	if (user.role === 'SUPERADMIN') {
+		return true;
+	}
+	
+	// ADMIN has most permissions by default (can be restricted by permissions array)
+	if (user.role === 'ADMIN') {
+		// If permissions array exists and is not empty, check it
+		if (user.permissions && user.permissions.length > 0) {
+			return user.permissions.includes(permission);
+		}
+		// Default: ADMIN has all permissions except SUPERADMIN-only features
+		return true;
+	}
+	
+	// USER: Check permissions array
+	if (user.permissions && Array.isArray(user.permissions)) {
+		return user.permissions.includes(permission);
+	}
+	
+	// Default: USER has no permissions unless explicitly granted
+	return false;
 }
 
 

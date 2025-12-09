@@ -5,6 +5,7 @@
 	import { page } from '$app/stores';
 	import { userStore, setUser, clearUser } from '$lib/stores/user';
 	import { syncStatus, isOnline, pendingSyncCount } from '$lib/stores/offline';
+	import { hasPermission } from '$lib/utils/permissions';
 	import { 
 		db, 
 		cacheReferenceData, 
@@ -20,9 +21,40 @@
 	import Icon from '$lib/components/icons/Icon.svelte';
 
 	let { data }: { data: any } = $props();
+	
+	// Helper function to check permissions
+	function canAccess(permission?: string): boolean {
+		if (!permission) return true;
+		if (!data.user) return false;
+		
+		// Ensure permissions array exists
+		const userWithPermissions = {
+			...data.user,
+			permissions: Array.isArray(data.user.permissions) 
+				? data.user.permissions 
+				: (data.user.permissions ? [data.user.permissions] : [])
+		};
+		
+		return hasPermission(userWithPermissions, permission);
+	}
 
 	// Initialize user store
 	setUser(data.user);
+	
+	// Debug: Log user data on mount (only once)
+	onMount(() => {
+		console.log('=== Dashboard Layout - User Data ===');
+		console.log('User:', data.user);
+		console.log('User permissions:', data.user?.permissions);
+		console.log('User permissions type:', typeof data.user?.permissions);
+		console.log('User permissions isArray:', Array.isArray(data.user?.permissions));
+		console.log('User role:', data.user?.role);
+		
+		// Test permissions
+		console.log('CAN_CREATE_CASES:', canAccess('CAN_CREATE_CASES'));
+		console.log('CAN_VIEW_REPORTS:', canAccess('CAN_VIEW_REPORTS'));
+		console.log('CAN_MANAGE_PATIENTS:', canAccess('CAN_MANAGE_PATIENTS'));
+	});
 
 	// Initialize sync status
 	const currentSyncStatus = $derived($syncStatus);
@@ -351,21 +383,27 @@
 							📊 ภาพรวม
 						</a>
 					</li>
-					<li>
-						<a href="/dashboard/cases" class:active={isActive('/dashboard/cases')}>
-							📋 รายงานเคส
-						</a>
-					</li>
-					<li>
-						<a href="/dashboard/cases/new" class:active={isActive('/dashboard/cases/new')}>
-							➕ เพิ่มรายงานเคส
-						</a>
-					</li>
-					<li>
-						<a href="/dashboard/patients" class:active={isActive('/dashboard/patients')}>
-							👥 จัดการผู้ป่วย
-						</a>
-					</li>
+					{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN' || canAccess('CAN_VIEW_REPORTS')}
+						<li>
+							<a href="/dashboard/cases" class:active={isActive('/dashboard/cases')}>
+								📋 รายงานเคส
+							</a>
+						</li>
+					{/if}
+					{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN' || canAccess('CAN_CREATE_CASES')}
+						<li>
+							<a href="/dashboard/cases/new" class:active={isActive('/dashboard/cases/new')}>
+								➕ เพิ่มรายงานเคส
+							</a>
+						</li>
+					{/if}
+					{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN' || canAccess('CAN_MANAGE_PATIENTS')}
+						<li>
+							<a href="/dashboard/patients" class:active={isActive('/dashboard/patients')}>
+								👥 จัดการผู้ป่วย
+							</a>
+						</li>
+					{/if}
 					{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN'}
 						<li>
 							<a href="/dashboard/users" class:active={isActive('/dashboard/users')}>
@@ -373,10 +411,17 @@
 							</a>
 						</li>
 					{/if}
-					{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN'}
+					{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN' || canAccess('CAN_EXPORT_EXCEL') || canAccess('CAN_IMPORT_EXCEL')}
 						<li>
 							<a href="/dashboard/import-export" class:active={isActive('/dashboard/import-export')}>
 								📥/📤 นำเข้า/ส่งออก
+							</a>
+						</li>
+					{/if}
+					{#if data.user?.role === 'SUPERADMIN' || data.user?.role === 'ADMIN' || canAccess('CAN_VIEW_REPORTS')}
+						<li>
+							<a href="/dashboard/reports" class:active={isActive('/dashboard/reports')}>
+								📊 รายงาน/สถิติ
 							</a>
 						</li>
 					{/if}
