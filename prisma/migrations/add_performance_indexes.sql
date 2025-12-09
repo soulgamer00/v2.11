@@ -55,3 +55,4 @@ CREATE INDEX IF NOT EXISTS "CaseReport_diseaseId_deletedAt_idx" ON "CaseReport"(
 -- Hospital table indexes
 CREATE INDEX IF NOT EXISTS "Hospital_name_idx" ON "Hospital"("name");
 
+

@@ -27,6 +27,12 @@
 	// Initialize sync status
 	const currentSyncStatus = $derived($syncStatus);
 
+	// Get first letter of user's name for avatar
+	const userInitial = $derived(() => {
+		const name = data.user?.fullName || data.user?.username || data.user?.firstName || 'User';
+		return name.charAt(0).toUpperCase();
+	});
+
 	// Cache reference data on mount (if online)
 	onMount(async () => {
 		if (!browser) return;
@@ -303,8 +309,8 @@
 					<ThemeToggle />
 					<div class="dropdown dropdown-end">
 						<button class="btn btn-ghost btn-circle avatar hover:scale-105 transition-transform" tabindex="0" aria-label="User menu">
-							<div class="w-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-								<Icon name="user" size={20} class="text-white" />
+							<div class="w-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-semibold text-lg">
+								{userInitial()}
 							</div>
 						</button>
 						<ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-300">

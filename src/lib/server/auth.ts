@@ -149,3 +149,4 @@ export function canAccessHospital(user: SessionUser | null, hospitalId: number):
 
 
 
+
