@@ -389,8 +389,7 @@
 							{ value: 'CAN_EXPORT_EXCEL', label: 'ส่งออก Excel' },
 							{ value: 'CAN_IMPORT_EXCEL', label: 'นำเข้า Excel' },
 							{ value: 'CAN_VIEW_REPORTS', label: 'ดูรายงาน/สถิติ' },
-							{ value: 'CAN_MANAGE_PATIENTS', label: 'จัดการผู้ป่วย' },
-							{ value: 'CAN_ACCESS_OFFLINE', label: 'ใช้งานแบบออฟไลน์' }
+							{ value: 'CAN_MANAGE_PATIENTS', label: 'จัดการผู้ป่วย' }
 						] as perm}
 							<label class="cursor-pointer label justify-start gap-3">
 								<input 

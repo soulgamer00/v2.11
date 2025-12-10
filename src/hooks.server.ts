@@ -59,7 +59,7 @@ const protectedRoutesHandle: Handle = async ({ event, resolve }) => {
 		'/api/reference-data' // Public API endpoint
 	];
 
-	// Check if path is a static asset
+	// Check if path is a static asset (must check BEFORE public routes)
 	const isStaticAsset = staticAssets.some((asset) => path.startsWith(asset));
 	if (isStaticAsset) {
 		return resolve(event);
@@ -70,14 +70,16 @@ const protectedRoutesHandle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	// Public routes (exact matches or specific paths)
+	// Public routes - explicit exact matches and specific prefixes
+	// IMPORTANT: Do NOT use path.startsWith('/') as it matches everything!
 	const isPublicRoute = 
-		path === '/' || 
-		path === '/login' ||
-		path.startsWith('/report') || // Public disease report pages
-		(path.startsWith('/api/') && path.includes('/reference-data'));
+		path === '/' ||                    // Root page only
+		path === '/login' ||               // Login page only
+		path.startsWith('/report') ||      // Public disease report pages (/report, /report/, /report/123, etc.)
+		(path.startsWith('/api/') && path.includes('/reference-data')); // Public API endpoint
 
 	// If not logged in and trying to access protected route
+	// All routes except public routes require authentication
 	if (!user && !isPublicRoute) {
 		return new Response(null, {
 			status: 302,

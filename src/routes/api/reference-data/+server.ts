@@ -4,7 +4,7 @@ import { hasRole } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 /**
- * API endpoint to load all reference data for offline caching
+ * API endpoint to load all reference data
  */
 export const GET: RequestHandler = async ({ locals }) => {
 	const user = locals.user;
