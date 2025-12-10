@@ -102,6 +102,41 @@ const protectedRoutesHandle: Handle = async ({ event, resolve }) => {
 
 export const handle = sequence(rateLimitHandle, authHandle, protectedRoutesHandle);
 
+// Error handling hook
+export const handleError = async ({ error, event, status }: any) => {
+	const errorId = crypto.randomUUID();
+	
+	try {
+		const { prisma } = await import('$lib/server/db');
+		
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		const errorStack = error instanceof Error ? error.stack : null;
+		
+		await prisma.errorLog.create({
+			data: {
+				id: errorId,
+				path: event?.url?.pathname || 'Unknown',
+				method: event?.request?.method || 'UNKNOWN',
+				message: errorMessage,
+				stack: errorStack,
+				userId: event?.locals?.user?.id || null
+			}
+		});
+		
+		console.error(`[Error ${errorId}] ${errorMessage}`, error);
+	} catch (logError) {
+		// If logging fails, at least log to console
+		console.error('Failed to log error to database:', logError);
+		console.error('Original error:', error);
+	}
+	
+	// Return error object that SvelteKit will use
+	return {
+		message: `Internal Server Error ID: ${errorId}`,
+		errorId: errorId
+	};
+};
+
 
 
 

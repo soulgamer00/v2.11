@@ -44,6 +44,7 @@ export const AuditResources = {
 	PATIENT: 'Patient',
 	CASE_REPORT: 'CaseReport',
 	USER: 'User',
-	SESSION: 'Session'
+	SESSION: 'Session',
+	SYSTEM_CONFIG: 'SystemConfig'
 } as const;
 

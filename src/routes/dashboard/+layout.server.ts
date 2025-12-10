@@ -16,6 +16,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		}
 	});
 
+	// Get Discord server URL from SystemConfig
+	const discordServerConfig = await prisma.systemConfig.findUnique({
+		where: { key: 'DISCORD_SERVER_URL' }
+	});
+	const discordServerUrl = discordServerConfig?.value || null;
+
 	// Ensure permissions is always an array for serialization
 	const userWithPermissions = {
 		...user,
@@ -28,6 +34,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 
 	return {
 		user: userWithPermissions,
-		unreadNotifications: unreadCount
+		unreadNotifications: unreadCount,
+		discordServerUrl
 	};
 };

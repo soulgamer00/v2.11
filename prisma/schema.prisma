@@ -120,6 +120,21 @@ model AuditLog {
   @@index([action, resource])
 }
 
+model ErrorLog {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  path      String
+  method    String
+  message   String
+  stack     String?  @db.Text
+  userId    String?
+
+  @@index([createdAt])
+  @@index([path])
+  @@index([userId])
+  @@index([method])
+}
+
 // --- MASTER DATA (Replaces Enums for Flexibility) ---
 model MasterData {
   id        Int       @id @default(autoincrement())

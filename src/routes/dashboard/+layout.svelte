@@ -1,6 +1,5 @@
 <script lang="ts">
 	// CSS is imported in root layout
-	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { userStore, setUser, clearUser } from '$lib/stores/user';
 	import { hasPermission } from '$lib/utils/permissions';
@@ -27,21 +26,6 @@
 
 	// Initialize user store
 	setUser(data.user);
-	
-	// Debug: Log user data on mount (only once)
-	onMount(() => {
-		console.log('=== Dashboard Layout - User Data ===');
-		console.log('User:', data.user);
-		console.log('User permissions:', data.user?.permissions);
-		console.log('User permissions type:', typeof data.user?.permissions);
-		console.log('User permissions isArray:', Array.isArray(data.user?.permissions));
-		console.log('User role:', data.user?.role);
-		
-		// Test permissions
-		console.log('CAN_CREATE_CASES:', canAccess('CAN_CREATE_CASES'));
-		console.log('CAN_VIEW_REPORTS:', canAccess('CAN_VIEW_REPORTS'));
-		console.log('CAN_MANAGE_PATIENTS:', canAccess('CAN_MANAGE_PATIENTS'));
-	});
 
 	// Get first letter of user's name for avatar
 	const userInitial = $derived(() => {
@@ -106,6 +90,8 @@
 					</a>
 				</div>
 				<div class="flex-none gap-1 sm:gap-2">
+					<!-- Theme Toggle -->
+					<ThemeToggle />
 					<!-- Notifications -->
 					<div class="dropdown dropdown-end">
 						<button class="btn btn-ghost btn-circle relative" tabindex="0" aria-label="Notifications">
@@ -131,6 +117,19 @@
 							</div>
 						</div>
 					</div>
+					<!-- Discord Server Link -->
+					{#if data.discordServerUrl}
+						<a 
+							href={data.discordServerUrl} 
+							target="_blank" 
+							rel="noopener noreferrer"
+							class="btn btn-ghost btn-circle" 
+							aria-label="Discord Server" 
+							title="Discord Server"
+						>
+							<Icon name="discord" size={20} />
+						</a>
+					{/if}
 					<!-- Home Button -->
 					<a href="/" class="btn btn-ghost btn-circle" aria-label="ไปหน้าแรก" title="ไปหน้าแรก">
 						<Icon name="home" size={20} />
@@ -171,10 +170,7 @@
 			<label for="drawer-toggle" class="drawer-overlay"></label>
 			<aside class="w-64 sm:w-72 bg-base-100 min-h-full">
 				<div class="p-3 sm:p-4">
-					<div class="flex items-center justify-between">
-						<h2 class="text-xl sm:text-2xl font-bold">เมนู</h2>
-						<ThemeToggle />
-					</div>
+					<h2 class="text-xl sm:text-2xl font-bold">เมนู</h2>
 				</div>
 				<ul class="menu p-2 sm:p-4 text-sm sm:text-base">
 					<li>
@@ -316,6 +312,18 @@
 								Audit Logs
 							</a>
 						</li>
+						<li class="menu-title">
+							<span><Icon name="settings" size={16} class="flex-shrink-0" /> System Tools</span>
+						</li>
+						<li>
+							<a
+								href="/dashboard/admin/system-logs"
+								class:active={isActive('/dashboard/admin/system-logs')}
+							>
+								<Icon name="alert" size={18} class="flex-shrink-0" />
+								System Error Logs
+							</a>
+						</li>
 						<li>
 							<a
 								href="/dashboard/admin/webhooks"
@@ -323,6 +331,15 @@
 							>
 								<Icon name="webhook" size={18} class="flex-shrink-0" />
 								จัดการ Discord Webhooks
+							</a>
+						</li>
+						<li>
+							<a
+								href="/dashboard/admin/discord-server"
+								class:active={isActive('/dashboard/admin/discord-server')}
+							>
+								<Icon name="discord" size={18} class="flex-shrink-0" />
+								จัดการ Discord Server Link
 							</a>
 						</li>
 					{/if}
