@@ -1,10 +1,6 @@
 <script lang="ts">
 	import { superForm } from 'sveltekit-superforms';
 	import { browser } from '$app/environment';
-	import { onMount } from 'svelte';
-	import { isOnline } from '$lib/stores/offline';
-	import { db } from '$lib/db/offline';
-	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import Icon from '$lib/components/icons/Icon.svelte';
 	import AutocompleteSearch from '$lib/components/AutocompleteSearch.svelte';
@@ -13,31 +9,6 @@
 
 	const { form, errors, enhance, delayed } = superForm(data.form, {
 		dataType: 'json',
-		onSubmit: async ({ cancel, formData }) => {
-			// Check if offline
-			if (browser && !$isOnline) {
-				cancel();
-				await saveOffline();
-				closeModal();
-				return;
-			}
-		},
-		onError: async ({ result, message }) => {
-			// Check if error is network-related or if user wants to save offline
-			if (browser) {
-				const isNetworkError = 
-					message?.includes('fetch') || 
-					message?.includes('network') || 
-					message?.includes('Failed to fetch') ||
-					result?.type === 'failure' ||
-					!navigator.onLine;
-				
-				if (isNetworkError || confirm('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ ต้องการบันทึกข้อมูลแบบออฟไลน์หรือไม่?')) {
-					await saveOffline();
-					closeModal();
-				}
-			}
-		},
 		onResult: ({ result }) => {
 			if (result.type === 'success') {
 				closeModal();
@@ -81,17 +52,6 @@
 			document.body.style.overflow = '';
 		}
 	}
-	
-	// Cached data for offline use
-	let cachedDiseases = $state<any[]>([]);
-	let cachedHospitals = $state<any[]>([]);
-	let cachedMasterData = $state<any>({
-		PREFIX: [],
-		OCCUPATION: [],
-		NATIONALITY: [],
-		MARITAL_STATUS: []
-	});
-	let cachedProvinces = $state<any[]>([]);
 
 	// Validation functions for each tab
 	function validateTab1(): { valid: boolean; message: string } {
@@ -200,86 +160,6 @@
 		}
 	}
 
-	// Load cached data on mount if offline
-	onMount(async () => {
-		if (!browser) return;
-		
-		// Always load from IndexedDB as fallback, regardless of online status
-		// This ensures dropdowns work even if network drops after page loads
-		try {
-			// Try to load from IndexedDB with individual error handling
-			let diseases: any[] = [];
-			let hospitals: any[] = [];
-			let provinces: any[] = [];
-			let allMasterData: any[] = [];
-
-			try {
-				// Use filter instead of where().equals() to avoid IndexedDB key errors with boolean
-				const allDiseases = await db.diseases.toArray();
-				diseases = allDiseases.filter(d => d.isActive === true);
-			} catch (error) {
-				console.error('Error loading diseases from IndexedDB:', error);
-				// Fallback to server data if available
-				diseases = data.diseases || [];
-			}
-
-			try {
-				hospitals = await db.hospitals.toArray();
-			} catch (error) {
-				console.error('Error loading hospitals from IndexedDB:', error);
-				hospitals = data.hospitals || [];
-			}
-
-			try {
-				provinces = await db.provinces.toArray();
-			} catch (error) {
-				console.error('Error loading provinces from IndexedDB:', error);
-				provinces = data.provinces || [];
-			}
-
-			try {
-				allMasterData = await db.masterData.toArray();
-			} catch (error) {
-				console.error('Error loading masterData from IndexedDB:', error);
-				allMasterData = [];
-			}
-			
-			// Only use cached data if we have it and we're offline, or if server data is missing
-			if (!$isOnline || !data.diseases?.length) {
-				cachedDiseases = diseases;
-			}
-			if (!$isOnline || !data.hospitals?.length) {
-				cachedHospitals = hospitals;
-			}
-			if (!$isOnline || !data.provinces?.length) {
-				cachedProvinces = provinces;
-			}
-			
-			// Always populate master data from cache as fallback
-			if (allMasterData.length > 0) {
-				cachedMasterData = {
-					PREFIX: allMasterData.filter((m) => m.category === 'PREFIX'),
-					OCCUPATION: allMasterData.filter((m) => m.category === 'OCCUPATION'),
-					NATIONALITY: allMasterData.filter((m) => m.category === 'NATIONALITY'),
-					MARITAL_STATUS: allMasterData.filter((m) => m.category === 'MARITAL_STATUS')
-				};
-			}
-		} catch (error) {
-			// Final fallback: use server data if IndexedDB completely fails
-			console.error('Critical error loading cached data, falling back to server data:', error);
-			if (data.diseases?.length) cachedDiseases = data.diseases;
-			if (data.hospitals?.length) cachedHospitals = data.hospitals;
-			if (data.provinces?.length) cachedProvinces = data.provinces;
-			if (data.masterData) {
-				cachedMasterData = {
-					PREFIX: data.masterData.PREFIX || [],
-					OCCUPATION: data.masterData.OCCUPATION || [],
-					NATIONALITY: data.masterData.NATIONALITY || [],
-					MARITAL_STATUS: data.masterData.MARITAL_STATUS || []
-				};
-			}
-		}
-	});
 
 	// Select patient from search results
 	async function selectPatient(patient: any) {
@@ -425,103 +305,6 @@
 		}
 	}
 
-	// Save case to IndexedDB when offline
-	async function saveOffline() {
-		if (!browser) return;
-
-		try {
-			// Calculate age
-			const illnessDate = new Date($form.illnessDate);
-			const birthDate = $form.patient.birthDate ? new Date($form.patient.birthDate) : illnessDate;
-			const ageYears = Math.floor((illnessDate.getTime() - birthDate.getTime()) / (1000 * 60 * 60 * 24 * 365));
-
-			// First, save patient to offline DB
-			const patientId = crypto.randomUUID();
-			await db.offlinePatients.add({
-				id: patientId,
-				idCard: $form.patient.idCard || undefined,
-				prefix: $form.patient.prefix || undefined,
-				firstName: $form.patient.firstName,
-				lastName: $form.patient.lastName,
-				gender: $form.patient.gender,
-				birthDate: $form.patient.birthDate || undefined,
-				nationality: $form.patient.nationality || 'ไทย',
-				maritalStatus: $form.patient.maritalStatus || undefined,
-				occupation: $form.patient.occupation || undefined,
-				phone: $form.patient.phone || undefined,
-				addressNo: $form.patient.addressNo || undefined,
-				moo: $form.patient.moo || undefined,
-				road: $form.patient.road || undefined,
-				provinceId: $form.patient.provinceId || undefined,
-				amphoeId: $form.patient.amphoeId || undefined,
-				tambonId: $form.patient.tambonId || undefined,
-				synced: false,
-				createdAt: new Date().toISOString()
-			});
-
-			// Prepare sick address
-			let sickAddress = {
-				sickAddressNo: $form.sickAddressNo,
-				sickMoo: $form.sickMoo,
-				sickRoad: $form.sickRoad,
-				sickProvinceId: $form.sickProvinceId,
-				sickAmphoeId: $form.sickAmphoeId,
-				sickTambonId: $form.sickTambonId
-			};
-
-			// If using same address, copy from patient
-			if ($form.useSameAddress) {
-				sickAddress = {
-					sickAddressNo: $form.patient.addressNo,
-					sickMoo: $form.patient.moo,
-					sickRoad: $form.patient.road,
-					sickProvinceId: $form.patient.provinceId,
-					sickAmphoeId: $form.patient.amphoeId,
-					sickTambonId: $form.patient.tambonId
-				};
-			}
-
-			// Generate clientId to prevent duplicate submissions
-			const clientId = crypto.randomUUID();
-			
-			// Save case to offline DB
-			const caseId = crypto.randomUUID();
-			await db.offlineCases.add({
-				id: caseId,
-				clientId: clientId, // Unique ID to prevent duplicate submissions
-				patientId: patientId,
-				hospitalId: $form.hospitalId,
-				diseaseId: $form.diseaseId,
-				illnessDate: $form.illnessDate || undefined,
-				treatDate: $form.treatDate || undefined,
-				diagnosisDate: $form.diagnosisDate || undefined,
-				patientType: $form.patientType || undefined,
-				condition: $form.condition || undefined,
-				deathDate: $form.deathDate || undefined,
-				causeOfDeath: $form.causeOfDeath || undefined,
-				ageYears,
-				sickAddressNo: sickAddress.sickAddressNo || undefined,
-				sickMoo: sickAddress.sickMoo || undefined,
-				sickRoad: sickAddress.sickRoad || undefined,
-				sickProvinceId: sickAddress.sickProvinceId || undefined,
-				sickAmphoeId: sickAddress.sickAmphoeId || undefined,
-				sickTambonId: sickAddress.sickTambonId || undefined,
-				reporterName: $form.reporterName || undefined,
-				remark: $form.remark || undefined,
-				treatingHospital: $form.treatingHospital || undefined,
-				labResult1: $form.labResult1 || undefined,
-				labResult2: $form.labResult2 || undefined,
-				syncStatus: 'pending', // Start as pending
-				createdAt: new Date().toISOString()
-			});
-
-			alert('บันทึกข้อมูลไว้ในโหมดออฟไลน์แล้ว จะทำการซิงค์อัตโนมัติเมื่อกลับมาออนไลน์');
-			goto('/dashboard/cases');
-		} catch (error) {
-			console.error('Error saving offline:', error);
-			alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลออฟไลน์');
-		}
-	}
 </script>
 
 <svelte:head>
@@ -704,7 +487,7 @@
 								bind:value={$form.patient.prefix}
 								label="คำนำหน้า"
 								placeholder="เลือกคำนำหน้า"
-								clientData={(data.masterData?.PREFIX?.length ? data.masterData.PREFIX : cachedMasterData?.PREFIX) || []}
+								clientData={data.masterData?.PREFIX || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -807,7 +590,7 @@
 								bind:value={$form.patient.nationality}
 								label="สัญชาติ"
 								placeholder="เลือกสัญชาติ"
-								clientData={(data.masterData?.NATIONALITY?.length ? data.masterData.NATIONALITY : cachedMasterData?.NATIONALITY) || []}
+								clientData={data.masterData?.NATIONALITY || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -828,7 +611,7 @@
 								bind:value={$form.patient.occupation}
 								label="อาชีพ"
 								placeholder="เลือกอาชีพ"
-								clientData={(data.masterData?.OCCUPATION?.length ? data.masterData.OCCUPATION : cachedMasterData?.OCCUPATION) || []}
+								clientData={data.masterData?.OCCUPATION || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -849,7 +632,7 @@
 								bind:value={$form.patient.maritalStatus}
 								label="สถานภาพ"
 								placeholder="เลือกสถานภาพ"
-								clientData={(data.masterData?.MARITAL_STATUS?.length ? data.masterData.MARITAL_STATUS : cachedMasterData?.MARITAL_STATUS) || []}
+								clientData={data.masterData?.MARITAL_STATUS || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.value?.toLowerCase().includes(query.toLowerCase()) || false;
@@ -948,7 +731,7 @@
 								bind:value={$form.patient.provinceId}
 								label="จังหวัด"
 								placeholder="เลือกจังหวัด"
-								clientData={($isOnline && data.provinces?.length ? data.provinces : cachedProvinces) || []}
+								clientData={data.provinces || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
@@ -1093,7 +876,7 @@
 								bind:value={$form.sickProvinceId}
 								label="จังหวัด"
 								placeholder="เลือกจังหวัด"
-								clientData={($isOnline && data.provinces?.length ? data.provinces : cachedProvinces) || []}
+								clientData={data.provinces || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									return item.nameTh?.toLowerCase().includes(query.toLowerCase()) ||
@@ -1225,7 +1008,7 @@
 								bind:value={$form.hospitalId}
 								label="หน่วยงานที่รายงาน"
 								placeholder="เลือกหน่วยงาน"
-								clientData={($isOnline && data.hospitals?.length ? data.hospitals : cachedHospitals) || []}
+								clientData={data.hospitals || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									const q = query.toLowerCase();
@@ -1270,7 +1053,7 @@
 								bind:value={$form.diseaseId}
 								label="โรค"
 								placeholder="เลือกโรค"
-								clientData={($isOnline && data.diseases?.length ? data.diseases : cachedDiseases) || []}
+								clientData={data.diseases || []}
 								clientSearchFn={(item, query) => {
 									if (!item || !query) return false;
 									const q = query.toLowerCase();

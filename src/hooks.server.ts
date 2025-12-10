@@ -55,9 +55,6 @@ const protectedRoutesHandle: Handle = async ({ event, resolve }) => {
 	const staticAssets = [
 		'/_app',
 		'/favicon',
-		'/manifest',
-		'/sw.js',
-		'/workbox-',
 		'/.well-known',
 		'/api/reference-data' // Public API endpoint
 	];
